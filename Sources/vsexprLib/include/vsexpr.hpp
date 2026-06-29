@@ -10,7 +10,7 @@
 //   SExprParseState state{};
 //   SExprToken tokens[256];
 //   std::string_view input = "(host 0.0.0.0) (port 443)";
-//   size_t count = tokenize_simd_driven(input, std::span<SExprToken>(tokens, 256), state);
+//   size_t count = tokenize(input, std::span<SExprToken>(tokens, 256), state);
 //
 // Memory model:
 //   All tokenization is zero-copy. Returned SExprToken values point directly into
@@ -172,7 +172,7 @@ template <size_t Width> using SimdCharVector = char __attribute__((vector_size(W
 
 template <size_t Width>
     requires(Width > 0 && Width <= BITMASK_WIDTH)
-[[nodiscard]] inline uint32_t collapse_vector_mask(SimdCharVector<Width> vec_mask) noexcept {
+[[nodiscard]] inline uint32_t reduce_vector_to_bitmask(SimdCharVector<Width> vec_mask) noexcept {
 #if defined(__AVX2__)
     static_assert(Width == 32, "AVX2 requires 32-byte vectors");
     return static_cast<uint32_t>(__builtin_ia32_pmovmskb256(reinterpret_cast<__v32qi>(vec_mask)));
@@ -213,7 +213,7 @@ template <size_t Width>
 #endif
 }
 
-[[nodiscard]] inline uint32_t compute_string_boundaries(uint32_t quote_mask, bool& in_string) noexcept {
+[[nodiscard]] inline uint32_t mask_quoted_regions(uint32_t quote_mask, bool& in_string) noexcept {
     // Branchless parallel prefix-XOR scan (simdjson technique)
     // Converts raw quote positions into a mask of which byte positions are inside strings
     uint32_t mask = quote_mask;
@@ -235,7 +235,8 @@ template <size_t Width>
 
 // --- Scalar Tokenizer (full buffer) ---
 
-inline size_t tokenize_full(std::string_view input, std::span<SExprToken> tokens, SExprParseState& state) noexcept {
+inline size_t tokenize_scalar_fallback(std::string_view input, std::span<SExprToken> tokens,
+                                       SExprParseState& state) noexcept {
     assert(!tokens.empty());
 
     const char* _Nonnull buffer = input.data();
@@ -320,10 +321,9 @@ inline size_t tokenize_full(std::string_view input, std::span<SExprToken> tokens
     return count;
 }
 
-// --- SIMD-Driven Tokenizer (structural anchor + scalar atom scan) ---
+// --- Stage 1: SIMD Structural Discovery + Scalar Atom Scan ---
 
-inline size_t tokenize_simd_driven(std::string_view input, std::span<SExprToken> tokens,
-                                   SExprParseState& state) noexcept {
+inline size_t tokenize(std::string_view input, std::span<SExprToken> tokens, SExprParseState& state) noexcept {
     assert(!tokens.empty());
 
     const char* _Nonnull buffer = input.data();
@@ -401,9 +401,9 @@ inline size_t tokenize_simd_driven(std::string_view input, std::span<SExprToken>
         SimdCharVector<SIMD_BLOCK_SIZE> chunk;
         __builtin_memcpy(&chunk, buffer + i, SIMD_BLOCK_SIZE);
 
-        uint32_t opens = collapse_vector_mask<SIMD_BLOCK_SIZE>(chunk == '(');
-        uint32_t closes = collapse_vector_mask<SIMD_BLOCK_SIZE>(chunk == ')');
-        uint32_t quotes = collapse_vector_mask<SIMD_BLOCK_SIZE>(chunk == '"');
+        uint32_t opens = reduce_vector_to_bitmask<SIMD_BLOCK_SIZE>(chunk == '(');
+        uint32_t closes = reduce_vector_to_bitmask<SIMD_BLOCK_SIZE>(chunk == ')');
+        uint32_t quotes = reduce_vector_to_bitmask<SIMD_BLOCK_SIZE>(chunk == '"');
 
         // Filter out escaped quotes: a quote preceded by an odd number of
         // consecutive backslashes is escaped and should not toggle string state.
@@ -422,7 +422,7 @@ inline size_t tokenize_simd_driven(std::string_view input, std::span<SExprToken>
             }
         }
 
-        uint32_t string_mask = compute_string_boundaries(quotes, state.in_string);
+        uint32_t string_mask = mask_quoted_regions(quotes, state.in_string);
         opens &= ~string_mask;
         closes &= ~string_mask;
 
@@ -476,7 +476,7 @@ inline size_t tokenize_simd_driven(std::string_view input, std::span<SExprToken>
     // to handle any partial atoms spanning chunk boundaries
     if(scalar_start < length && count < max_tokens) {
         std::string_view tail(buffer + scalar_start, length - scalar_start);
-        count += tokenize_full(tail, tokens.subspan(count), state);
+        count += tokenize_scalar_fallback(tail, tokens.subspan(count), state);
     }
 
     return count;
@@ -540,7 +540,7 @@ static_assert(std::is_standard_layout_v<TokenizerResult>, "TokenizerResult must 
     TokenizerResult result{};
     SExprParseState state{};
     std::span<SExprToken> token_span(result.tokens);
-    result.count = tokenize_simd_driven(input, token_span, state);
+    result.count = tokenize(input, token_span, state);
     result.truncated = (result.count >= MAX_TOKENS && result.count < input.size());
     return result;
 }
