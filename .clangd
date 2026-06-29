@@ -1,0 +1,42 @@
+CompileFlags:
+  Compiler: clang++
+  Add:
+    - "-std=c++2b"
+    - "-xc++"
+    - "-fno-exceptions"
+    - "-w"
+    - "-Werror=return-stack-address"
+    - "-Werror=dangling"
+    - "-Werror=switch"
+    - "-Wconversion"
+    - "-Wsign-conversion"
+    - "-Wshorten-64-to-32"
+    - "-Wimplicit-int-float-conversion"
+    - "-Wfloat-conversion"
+    - "-Wnullability"
+    - "-Wnullability-completeness"
+    - "-Wnullability-extension"
+    - "-Wno-nullability-inferred-on-nested-type"
+    - "-Wnullable-to-nonnull-conversion"
+    - "-Wreturn-type"
+    - "-Wmove"
+    - "-Wnrvo"
+  Remove: []
+
+Diagnostics:
+  UnusedIncludes: Strict
+  ClangTidy:
+    Add:
+      - bugprone-*
+      - performance-*
+      - modernize-*
+      - readability-identifier-naming
+      - cppcoreguidelines-pro-type-member-init
+      - cppcoreguidelines-init-variables
+      - misc-redundant-expression
+    Remove:
+      - modernize-use-trailing-return-type
+      - readability-identifier-length
+
+Index:
+  Background: Build

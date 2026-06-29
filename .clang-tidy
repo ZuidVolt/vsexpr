@@ -1,0 +1,48 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-suspicious-stringview-data-usage,
+  performance-*,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  readability-identifier-naming,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-init-variables,
+  misc-redundant-expression,
+  misc-unused-using-decls
+
+WarningsAsErrors: >
+  bugprone-dangling-handle,
+  bugprone-use-after-move,
+  performance-unnecessary-copy-initialization,
+  performance-move-const-arg,
+  modernize-use-nullptr,
+  modernize-use-override,
+  cppcoreguidelines-init-variables
+
+HeaderFilterRegex: '.*vsexpr\.hpp$'
+
+CheckOptions:
+  - key: readability-identifier-naming.ClassCase
+    value: PascalCase
+  - key: readability-identifier-naming.EnumCase
+    value: PascalCase
+  - key: readability-identifier-naming.FunctionCase
+    value: snake_case
+  - key: readability-identifier-naming.VariableCase
+    value: snake_case
+  - key: readability-identifier-naming.ParameterCase
+    value: snake_case
+  - key: readability-identifier-naming.ConstantCase
+    value: UPPER_SNAKE_CASE
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_SNAKE_CASE
+  - key: readability-identifier-naming.TypeAliasCase
+    value: PascalCase
+  - key: cppcoreguidelines-init-variables.CheckAlsoMacros
+    value: true
+
+FormatStyle: none
