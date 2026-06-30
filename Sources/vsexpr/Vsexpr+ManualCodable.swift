@@ -1,5 +1,7 @@
 import vsexprLib
 
+// MARK: - Manual Decoding Protocol
+
 public protocol VsexprDecodable: Sendable {
     init(from stream: inout SExprTokenStream) throws(VsexprError)
 }
@@ -78,7 +80,84 @@ extension Bool: VsexprDecodable {
     }
 }
 
-// MARK: - Key-Value Extraction Helpers
+// MARK: - Manual Encoding Protocol
+
+public protocol VsexprEncodable: Sendable {
+    func encode(to string: inout String) throws(VsexprError)
+}
+
+extension String: VsexprEncodable {
+    public func encode(to string: inout String) {
+        var needsQuote = false
+        if isEmpty {
+            needsQuote = true
+        } else {
+            for byte in utf8 {
+                if byte == 0x20 || byte == 0x28 || byte == 0x29 || byte == 0x22 || byte == 0x5C || byte == 0x0A
+                    || byte == 0x09 || byte == 0x0D
+                {
+                    needsQuote = true
+                    break
+                }
+            }
+        }
+
+        if needsQuote {
+            string.append("\"")
+            for byte in utf8 {
+                switch byte {
+                case 0x0A: string.append("\\n")
+                case 0x09: string.append("\\t")
+                case 0x0D: string.append("\\r")
+                case 0x22: string.append("\\\"")
+                case 0x5C: string.append("\\\\")
+                default: string.append(Character(UnicodeScalar(byte)))
+                }
+            }
+            string.append("\"")
+        } else {
+            string.append(self)
+        }
+    }
+}
+
+extension UInt32: VsexprEncodable {
+    public func encode(to string: inout String) {
+        string.append(String(self))
+    }
+}
+
+extension UInt64: VsexprEncodable {
+    public func encode(to string: inout String) {
+        string.append(String(self))
+    }
+}
+
+extension Int32: VsexprEncodable {
+    public func encode(to string: inout String) {
+        string.append(String(self))
+    }
+}
+
+extension Int: VsexprEncodable {
+    public func encode(to string: inout String) {
+        string.append(String(self))
+    }
+}
+
+extension Double: VsexprEncodable {
+    public func encode(to string: inout String) {
+        string.append(String(self))
+    }
+}
+
+extension Bool: VsexprEncodable {
+    public func encode(to string: inout String) {
+        string.append(self ? "true" : "false")
+    }
+}
+
+// MARK: - SExprTokenStream Key-Value Extraction Helpers
 
 extension SExprTokenStream {
     public mutating func extractString(for key: String) throws(VsexprError) -> String {
@@ -123,5 +202,15 @@ extension SExprTokenStream {
             throw .missingKey(key)
         }
         return group
+    }
+}
+
+// MARK: - SExprTokenStream Key-Value Insertion Helpers
+
+extension SExprTokenStream {
+    public static func serialize<T: VsexprEncodable>(_ value: T) throws(VsexprError) -> String {
+        var string = ""
+        try value.encode(to: &string)
+        return string
     }
 }

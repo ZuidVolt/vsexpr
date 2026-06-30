@@ -15,7 +15,7 @@ func tokenText(_ token: SExprToken) -> String {
     return String(decoding: UnsafeBufferPointer(start: ptr, count: token.length), as: UTF8.self)
 }
 
-final class _TokenStorage: @unchecked Sendable {
+final class TokenStorage: @unchecked Sendable {
     let buffer: UnsafeBufferPointer<CChar>
     let result: TokenizerResult
 
@@ -30,19 +30,30 @@ final class _TokenStorage: @unchecked Sendable {
         self.result = tokenize_to_result(ptr, size_t(length))
     }
 
+    init(rawBytes: UnsafeRawBufferPointer) {
+        let length = rawBytes.count
+        let ptr = UnsafeMutablePointer<CChar>.allocate(capacity: length + 1)
+        rawBytes.baseAddress?.withMemoryRebound(to: CChar.self, capacity: length) { src in
+            ptr.initialize(from: src, count: length)
+        }
+        ptr[length] = 0
+        self.buffer = UnsafeBufferPointer(start: ptr, count: length + 1)
+        self.result = tokenize_to_result(ptr, size_t(length))
+    }
+
     deinit {
         buffer.baseAddress?.deallocate()
     }
 }
 
 public struct SExprTokenStream: @unchecked Sendable {
-    let _storage: _TokenStorage
+    let _storage: TokenStorage
     public let count: Int
     public let startOffset: Int
     public let truncated: Bool
     public var position: Int
 
-    init(startOffset: Int, count: Int, storage: _TokenStorage, truncated: Bool = false) {
+    init(startOffset: Int, count: Int, storage: TokenStorage, truncated: Bool = false) {
         self._storage = storage
         self.startOffset = startOffset
         self.count = count
@@ -245,8 +256,9 @@ public struct SExprTokenStream: @unchecked Sendable {
         }
     }
 
-    func collectKeyMap() -> [UInt64: Range<Int>] {
+    func collectKeyMapAndStrings() -> (map: [UInt64: Range<Int>], strings: [String]) {
         var map: [UInt64: Range<Int>] = [:]
+        var strings: [String] = []
         var pos = 0
         while pos < count {
             guard token(at: pos).type == .OPEN_PAREN else {
@@ -260,6 +272,7 @@ public struct SExprTokenStream: @unchecked Sendable {
             let keyToken = token(at: pos)
             let rawPtr = UnsafeRawPointer(keyToken.ptr)
             let keyHash = fnv1a64(bytes: UnsafeRawBufferPointer(start: rawPtr, count: keyToken.length))
+            strings.append(tokenText(keyToken))
             pos += 1
 
             guard pos < count else { break }
@@ -273,6 +286,6 @@ public struct SExprTokenStream: @unchecked Sendable {
             }
             map[keyHash] = valueStart..<(pos > 0 ? pos - 1 : pos)
         }
-        return map
+        return (map, strings)
     }
 }

@@ -524,3 +524,258 @@ func codableDecodeMultiKeyWithEscapedStrings() async throws {
     #expect(decoded.port == 443)
     #expect(decoded.debugMode == true)
 }
+
+// MARK: - Array-of-Structs: Encoder Round-Trip
+
+private struct ArrayElementConfig: Codable, Equatable {
+    let name: String
+    let value: Int
+}
+
+private struct CollectionRootConfig: Codable, Equatable {
+    let activeRoutes: [ArrayElementConfig]
+    let fallbackServers: [String]
+}
+
+@Test
+func codableHandlesArrayOfStructsRoundTrip() async throws {
+    let config = CollectionRootConfig(
+        activeRoutes: [
+            ArrayElementConfig(name: "alpha", value: 100),
+            ArrayElementConfig(name: "beta", value: 200),
+        ],
+        fallbackServers: ["10.0.0.1", "10.0.0.2"]
+    )
+    let serialized = try Vsexpr.serialize(config)
+    let decoded = try Vsexpr.parse(CollectionRootConfig.self, from: serialized)
+    #expect(decoded == config)
+}
+
+@Test
+func codableHandlesSingleElementArray() async throws {
+    let config = CollectionRootConfig(
+        activeRoutes: [ArrayElementConfig(name: "solo", value: 42)],
+        fallbackServers: ["10.0.0.1"]
+    )
+    let serialized = try Vsexpr.serialize(config)
+    let decoded = try Vsexpr.parse(CollectionRootConfig.self, from: serialized)
+    #expect(decoded == config)
+}
+
+@Test
+func codableHandlesThreeElementArray() async throws {
+    let config = CollectionRootConfig(
+        activeRoutes: [
+            ArrayElementConfig(name: "a", value: 1),
+            ArrayElementConfig(name: "b", value: 2),
+            ArrayElementConfig(name: "c", value: 3),
+        ],
+        fallbackServers: []
+    )
+    let serialized = try Vsexpr.serialize(config)
+    let decoded = try Vsexpr.parse(CollectionRootConfig.self, from: serialized)
+    #expect(decoded == config)
+}
+
+// MARK: - Empty Collections
+
+@Test
+func codableHandlesEmptyCollections() async throws {
+    struct EmptyTest: Codable, Equatable {
+        let tags: [String]
+    }
+    let original = EmptyTest(tags: [])
+    let output = try Vsexpr.serialize(original)
+    let decoded = try Vsexpr.parse(EmptyTest.self, from: output)
+    #expect(decoded == original)
+}
+
+@Test
+func codableHandlesEmptyStructArray() async throws {
+    struct EmptyArrayTest: Codable, Equatable {
+        let items: [ArrayElementConfig]
+    }
+    let original = EmptyArrayTest(items: [])
+    let output = try Vsexpr.serialize(original)
+    let decoded = try Vsexpr.parse(EmptyArrayTest.self, from: output)
+    #expect(decoded == original)
+}
+
+// MARK: - Optional Arrays with Nil Placeholders
+
+private struct OptionalArrayConfig: Codable, Equatable {
+    let tags: [String?]
+}
+
+@Test
+func codableHandlesOptionalArrayWithNils() async throws {
+    let config = OptionalArrayConfig(tags: ["gzip", nil, "brotli"])
+    let serialized = try Vsexpr.serialize(config)
+    #expect(serialized.contains("nil"))
+    let decoded = try Vsexpr.parse(OptionalArrayConfig.self, from: serialized)
+    #expect(decoded == config)
+}
+
+@Test
+func codableHandlesAllNilOptionalArray() async throws {
+    let config = OptionalArrayConfig(tags: [nil, nil])
+    let serialized = try Vsexpr.serialize(config)
+    let decoded = try Vsexpr.parse(OptionalArrayConfig.self, from: serialized)
+    #expect(decoded == config)
+}
+
+// MARK: - Mixed Primitive Arrays
+
+@Test
+func codableHandlesPrimitiveStringArray() async throws {
+    struct PrimitiveTest: Codable, Equatable {
+        let names: [String]
+    }
+    let config = PrimitiveTest(names: ["alice", "bob", "charlie"])
+    let serialized = try Vsexpr.serialize(config)
+    let decoded = try Vsexpr.parse(PrimitiveTest.self, from: serialized)
+    #expect(decoded == config)
+}
+
+// MARK: - Deeply Nested Arrays
+
+private struct DeepOuter: Codable, Equatable {
+    let nested: [DeepInner]
+}
+
+private struct DeepInner: Codable, Equatable {
+    let label: String
+    let children: [String]
+}
+
+@Test
+func codableHandlesDeeplyNestedArray() async throws {
+    let config = DeepOuter(nested: [
+        DeepInner(label: "x", children: ["a", "b"]),
+        DeepInner(label: "y", children: ["c"]),
+    ])
+    let serialized = try Vsexpr.serialize(config)
+    let decoded = try Vsexpr.parse(DeepOuter.self, from: serialized)
+    #expect(decoded == config)
+}
+
+// MARK: - Array Fuzz: Property-Based Round-Trip
+
+@Test
+func codableArrayFuzzRoundTrip() async {
+    await propertyCheck(
+        input: Gen.lowercaseLetter.string(of: 1...5).array(of: 1...6)
+    ) { names in
+        struct FuzzConfig: Codable, Equatable {
+            let items: [ArrayElementConfig]
+        }
+        let config = FuzzConfig(
+            items: names.enumerated().map { ArrayElementConfig(name: $0.element, value: $0.offset) }
+        )
+        let serialized = try? Vsexpr.serialize(config)
+        guard let s = serialized else { return }
+        let decoded = try? Vsexpr.parse(FuzzConfig.self, from: s)
+        #expect(decoded == config)
+    }
+}
+
+// MARK: - Key Strategy: useDefaultKeys
+
+private struct DefaultKeysConfig: Codable, Equatable {
+    let debugMode: Bool
+    let port: UInt32
+}
+
+@Test
+func decoderUseDefaultKeysMatchesExactKeys() async throws {
+    var decoder = VsexprDecoder()
+    decoder.keyDecodingStrategy = .useDefaultKeys
+    let config = try decoder.decode(DefaultKeysConfig.self, from: "(debugMode true) (port 443)")
+    #expect(config.debugMode == true)
+    #expect(config.port == 443)
+}
+
+@Test
+func encoderUseDefaultKeysWritesCamelCase() async throws {
+    let encoder = VsexprEncoder()
+    encoder.keyEncodingStrategy = .useDefaultKeys
+    let output = try encoder.encode(DefaultKeysConfig(debugMode: true, port: 443))
+    #expect(output.contains("debugMode"))
+    #expect(!output.contains("debug_mode"))
+}
+
+@Test
+func roundTripDefaultKeys() async throws {
+    var decoder = VsexprDecoder()
+    decoder.keyDecodingStrategy = .useDefaultKeys
+    let encoder = VsexprEncoder()
+    encoder.keyEncodingStrategy = .useDefaultKeys
+    let original = DefaultKeysConfig(debugMode: true, port: 443)
+    let encoded = try encoder.encode(original)
+    let decoded = try decoder.decode(DefaultKeysConfig.self, from: encoded)
+    #expect(decoded == original)
+}
+
+// MARK: - Key Strategy: convertFromSnakeCase (default)
+
+@Test
+func decoderConvertFromSnakeCaseMatchesSnakeKeys() async throws {
+    var decoder = VsexprDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let config = try decoder.decode(DefaultKeysConfig.self, from: "(debug_mode true) (port 443)")
+    #expect(config.debugMode == true)
+    #expect(config.port == 443)
+}
+
+@Test
+func encoderConvertToSnakeCaseWritesSnakeKeys() async throws {
+    let encoder = VsexprEncoder()
+    encoder.keyEncodingStrategy = .convertToSnakeCase
+    let output = try encoder.encode(DefaultKeysConfig(debugMode: true, port: 443))
+    #expect(output.contains("debug_mode"))
+    #expect(!output.contains("debugMode"))
+}
+
+@Test
+func roundTripConvertFromSnakeCase() async throws {
+    let original = DefaultKeysConfig(debugMode: true, port: 443)
+    let encoded = try Vsexpr.serialize(original)
+    let decoded = try Vsexpr.parse(DefaultKeysConfig.self, from: encoded)
+    #expect(decoded == original)
+}
+
+// MARK: - Data Pipeline
+
+@Test
+func tokenizeDataPayload() async throws {
+    let data = "(host 0.0.0.0) (port 443)".data(using: .utf8)!
+    let stream = try Vsexpr.tokenize(data)
+    #expect(stream.count > 0)
+}
+
+@Test
+func tokenizeEmptyData() async throws {
+    let data = Data()
+    let stream = try Vsexpr.tokenize(data)
+    #expect(stream.count == 0)
+    #expect(stream.isAtEnd)
+}
+
+// MARK: - allKeys Compliance
+
+@Test
+func allKeysReturnsDiscoveredKeys() async throws {
+    struct AllKeysTest: Decodable {
+        let host: String
+        let port: UInt32
+    }
+    let input = "(host 0.0.0.0) (port 443)"
+    let stream = try Vsexpr.tokenize(input)
+    let decoder = VsexprDecoderImpl(stream: stream, payload: input, strategy: .convertFromSnakeCase)
+    let container = decoder.container(keyedBy: CodingKeys.self)
+    #expect(container.allKeys.count == 2)
+}
+
+private enum CodingKeys: String, CodingKey {
+    case host, port
+}
