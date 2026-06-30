@@ -36,7 +36,17 @@ jobs:
 
       - name: Add Redirect to Landing Page
         run: |
-          echo '<script>window.location.href += "/documentation/vsexpr"</script>' > ./docs/index.html
+          cat << 'EOF' > ./docs/index.html
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta http-equiv="refresh" content="0; url=documentation/vsexpr/" />
+            </head>
+            <body>
+              <p>Redirecting to <a href="documentation/vsexpr/">documentation</a>...</p>
+            </body>
+          </html>
+          EOF
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
