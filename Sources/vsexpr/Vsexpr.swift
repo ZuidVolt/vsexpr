@@ -260,3 +260,164 @@ public enum Vsexpr {
         return FileLocation(line: line, column: col)
     }
 }
+
+// MARK: - Framing Strategy
+
+/// Determines how complete S-expression frames are detected in a byte stream.
+///
+/// The framing strategy decouples I/O boundary detection from syntax parsing.
+/// Each strategy implements a different trade-off between structure enforcement
+/// and flexibility for various deployment profiles (configuration files, Unix
+/// pipelines, network protocols).
+public enum VsexprFramingStrategy: Sendable {
+    /// Each expression must be enclosed in top-level matching parentheses.
+    /// Frame is detected when paren depth returns to 0 after positive excursion.
+    /// Best for structured command envelopes and configuration blocks.
+    case balancedParentheses
+
+    /// Each expression is terminated by a newline (`0x0A`).
+    /// Allows raw atoms at the root level. CRLF (`\r\n`) is handled transparently.
+    /// Standard for Unix pipeline integrations.
+    case lineDelimited
+
+    /// Each payload is prefixed by a fixed-size big-endian byte count header.
+    /// The framing layer reads the header, then extracts exactly that many payload bytes.
+    /// Eliminates streaming scan overhead over raw network TCP sockets.
+    case lengthPrefixed(headerSize: LengthHeaderSize)
+
+    public enum LengthHeaderSize: Sendable {
+        case uint16BigEndian
+        case uint32BigEndian
+    }
+}
+
+// MARK: - Async Sequence
+
+/// An asynchronous sequence that progressively yields decoded instances from a
+/// streaming byte source.
+///
+/// `VsexprAsyncSequence` wraps any `AsyncSequence` of bytes and detects complete
+/// top-level S-expression frames using a configurable scalar framing state machine.
+/// Each complete frame is tokenized using the SIMD engine and decoded using the
+/// provided `VsexprDecoder` configuration.
+///
+/// Memory usage is bounded by the size of the largest single top-level expression,
+/// regardless of the total stream length.
+///
+/// ### Example
+///
+/// ```swift
+/// let decoder = VsexprDecoder()
+/// decoder.keyDecodingStrategy = .convertFromSnakeCase
+///
+/// let (bytes, _) = try await URLSession.shared.bytes(from: url)
+/// let sequence = decoder.decodeStream(NodeMetrics.self, from: bytes)
+///
+/// for try await metric in sequence {
+///     print("Node \(metric.nodeId): \(metric.cpuUtilization)%")
+/// }
+/// ```
+///
+/// - Note: Both `Decodable` and `VsexprDecodable` types are supported. Swift's
+///   overload resolution selects the correct decode path based on the generic
+///   constraint at the call site.
+public struct VsexprAsyncSequence<Base: AsyncSequence, T: Decodable>: AsyncSequence
+where Base.Element == UInt8, Base.Failure == any Error {
+    public typealias Element = T
+
+    private let base: Base
+    private let decoder: VsexprDecoder
+    private let strategy: VsexprFramingStrategy
+
+    /// Creates an asynchronous sequence from a byte source and decoder configuration.
+    ///
+    /// - Parameters:
+    ///   - base: An asynchronous sequence of bytes (e.g., `URLSession.AsyncBytes`).
+    ///   - decoder: The decoder to use for each frame. Defaults to a fresh
+    ///     `VsexprDecoder` with `.convertFromSnakeCase` strategy.
+    ///   - strategy: The framing strategy for detecting complete expressions.
+    ///     Defaults to `.lineDelimited`.
+    public init(
+        _ base: Base, decoder: VsexprDecoder = VsexprDecoder(),
+        strategy: VsexprFramingStrategy = .lineDelimited
+    ) {
+        self.base = base
+        self.decoder = decoder
+        self.strategy = strategy
+    }
+
+    public func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(
+            baseIterator: base.makeAsyncIterator(), decoder: decoder, strategy: strategy)
+    }
+    public struct AsyncIterator: AsyncIteratorProtocol, @unchecked Sendable {
+        var baseIterator: Base.AsyncIterator
+        let decoder: VsexprDecoder
+        let strategy: VsexprFramingStrategy
+        var buffer: ContiguousArray<UInt8>
+        var tracker: VsexprFrameTracker
+        var frameCount: Int = 0
+        let reusableStorage = TokenStorage()
+
+        init(baseIterator: Base.AsyncIterator, decoder: VsexprDecoder, strategy: VsexprFramingStrategy) {
+            self.baseIterator = baseIterator
+            self.decoder = decoder
+            self.strategy = strategy
+            self.buffer = ContiguousArray<UInt8>()
+            self.buffer.reserveCapacity(4_096)
+            self.tracker = VsexprFrameTracker(strategy: strategy)
+        }
+
+        public mutating func next() async throws -> T? {
+            while let byte = try await baseIterator.next() {
+                buffer.append(byte)
+                let frameComplete = try tracker.feed(byte, bufferCount: buffer.count)
+
+                if frameComplete {
+                    frameCount += 1
+                    return try decodeFrame()
+                }
+            }
+
+            // EOF boundary verification
+            guard tracker.hasPartialData else {
+                if frameCount == 0, !buffer.isEmpty {
+                    throw framingMismatchError()
+                }
+                return nil
+            }
+
+            // Strategy-specific EOF handling
+            switch strategy {
+            case .lengthPrefixed:
+                throw VsexprError.unexpectedEnd
+            case .balancedParentheses:
+                throw VsexprError.syntaxError(
+                    description: "Stream ended with unterminated expression")
+            case .lineDelimited:
+                // Line-delimited inputs can safely process trailing non-newline data at EOF
+                frameCount += 1
+                return try decodeFrame()
+            }
+        }
+    }
+}
+
+// MARK: - URLSession.AsyncBytes Convenience
+
+extension VsexprAsyncSequence where Base == URLSession.AsyncBytes {
+    /// Creates an asynchronous sequence from a `URLSession` byte stream.
+    ///
+    /// - Parameters:
+    ///   - bytes: An asynchronous byte source from `URLSession.bytes(from:)`.
+    ///   - decoder: The decoder to use for each frame.
+    ///   - strategy: The framing strategy for detecting complete expressions.
+    public init(
+        _ bytes: URLSession.AsyncBytes, decoder: VsexprDecoder = VsexprDecoder(),
+        strategy: VsexprFramingStrategy = .lineDelimited
+    ) {
+        self.base = bytes
+        self.decoder = decoder
+        self.strategy = strategy
+    }
+}

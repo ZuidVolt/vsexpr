@@ -16,9 +16,10 @@ func tokenText(_ token: SExprToken) -> String {
 }
 
 final class TokenStorage: @unchecked Sendable {
-    let buffer: UnsafeBufferPointer<CChar>
-    let result: TokenizerResult
-    let payloadString: String
+    var buffer: UnsafeBufferPointer<CChar>
+    var result: TokenizerResult
+    var payloadString: String
+    var owned: Bool
 
     init(payload: String) {
         self.payloadString = payload
@@ -30,6 +31,7 @@ final class TokenStorage: @unchecked Sendable {
         ptr[length] = 0
         self.buffer = UnsafeBufferPointer(start: ptr, count: length + 1)
         self.result = tokenize_to_result(ptr, size_t(length))
+        self.owned = true
     }
 
     init(rawBytes: UnsafeRawBufferPointer) {
@@ -44,10 +46,27 @@ final class TokenStorage: @unchecked Sendable {
         ptr[length] = 0
         self.buffer = UnsafeBufferPointer(start: ptr, count: length + 1)
         self.result = tokenize_to_result(ptr, size_t(length))
+        self.owned = true
+    }
+
+    init(borrowing result: TokenizerResult, buffer: UnsafeBufferPointer<CChar>) {
+        self.payloadString = ""
+        self.buffer = buffer
+        self.result = result
+        self.owned = false
+    }
+
+    init() {
+        self.payloadString = ""
+        self.buffer = UnsafeBufferPointer(start: nil, count: 0)
+        self.result = TokenizerResult()
+        self.owned = false
     }
 
     deinit {
-        buffer.baseAddress?.deallocate()
+        if owned {
+            buffer.baseAddress?.deallocate()
+        }
     }
 }
 
