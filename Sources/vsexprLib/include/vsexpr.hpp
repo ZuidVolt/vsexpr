@@ -233,7 +233,7 @@ template <size_t Width>
     return mask;
 }
 
-// --- Scalar Tokenizer (full buffer) ---
+// --- Scalar Fallback Tokenizer (architecture-agnostic reference path) ---
 
 inline size_t tokenize_scalar_fallback(std::string_view input, std::span<SExprToken> tokens,
                                        SExprParseState& state) noexcept {
@@ -321,7 +321,7 @@ inline size_t tokenize_scalar_fallback(std::string_view input, std::span<SExprTo
     return count;
 }
 
-// --- Stage 1: SIMD Structural Discovery + Scalar Atom Scan ---
+// --- Core Tokenizer (SIMD structural discovery + scalar atom scan) ---
 
 inline size_t tokenize(std::string_view input, std::span<SExprToken> tokens, SExprParseState& state) noexcept {
     assert(!tokens.empty());

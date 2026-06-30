@@ -32,7 +32,12 @@ public enum Vsexpr {
         var col = 1
         for (i, byte) in payload.utf8.enumerated() {
             if i >= byteOffset { break }
-            if byte == 0x0A { line += 1; col = 1 } else { col += 1 }
+            if byte == 0x0A {
+                line += 1
+                col = 1
+            } else {
+                col += 1
+            }
         }
         return FileLocation(line: line, column: col)
     }
