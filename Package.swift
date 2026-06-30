@@ -46,10 +46,12 @@ let swiftSettings: [SwiftSetting] = [
         "-Xcc",
         "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1",
     ]
+    let stdLib = "c++"
 #else
     let cxxUnsafeFlags = [
         "-Xcc", "-std=c++2b",
     ]
+    let stdLib = "stdc++"
 #endif
 
 let package = Package(
@@ -67,7 +69,7 @@ let package = Package(
             name: "vsexprLib",
             cxxSettings: cxxSettings,
             linkerSettings: [
-                .linkedLibrary("c++")
+                .linkedLibrary(stdLib)
             ]
         ),
         .target(
