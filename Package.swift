@@ -39,6 +39,19 @@ let swiftSettings: [SwiftSetting] = [
     .enableUpcomingFeature("ExistentialAny"),
 ]
 
+#if os(macOS)
+    let cxxUnsafeFlags = [
+        "-Xcc", "-std=c++2b",
+        "-Xcc", "-isystem",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1",
+    ]
+#else
+    let cxxUnsafeFlags = [
+        "-Xcc", "-std=c++2b",
+    ]
+#endif
+
 let package = Package(
     name: "vsexpr",
     platforms: [.macOS(.v26)],
@@ -46,7 +59,8 @@ let package = Package(
         .library(name: "vsexpr", targets: ["vsexpr"])
     ],
     dependencies: [
-        .package(url: "https://github.com/x-sheep/swift-property-based.git", from: "1.0.0")
+        .package(url: "https://github.com/x-sheep/swift-property-based.git", from: "1.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
     ],
     targets: [
         .target(
@@ -61,12 +75,7 @@ let package = Package(
             dependencies: ["vsexprLib"],
             swiftSettings: swiftSettings + [
                 .interoperabilityMode(.Cxx),
-                .unsafeFlags([
-                    "-Xcc", "-std=c++2b",
-                    "-Xcc", "-isystem",
-                    "-Xcc",
-                    "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1",
-                ]),
+                .unsafeFlags(cxxUnsafeFlags),
             ]
         ),
         .testTarget(
@@ -77,12 +86,7 @@ let package = Package(
             ],
             swiftSettings: swiftSettings + [
                 .interoperabilityMode(.Cxx),
-                .unsafeFlags([
-                    "-Xcc", "-std=c++2b",
-                    "-Xcc", "-isystem",
-                    "-Xcc",
-                    "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1",
-                ]),
+                .unsafeFlags(cxxUnsafeFlags),
             ]
         ),
     ],

@@ -42,3 +42,12 @@ reset:
     rm -rf .build Package.resolved
     swift package reset
     swift package resolve
+
+# Build static Swift-DocC documentation for static hosting
+docs-build:
+    swift package --allow-writing-to-directory ./docs \
+        generate-documentation --target vsexpr --output-path ./docs --transform-for-static-hosting --hosting-base-path vsexpr
+
+# Start a local web server to preview DocC documentation
+docs-preview:
+    swift package --disable-sandbox preview-documentation --target vsexpr
