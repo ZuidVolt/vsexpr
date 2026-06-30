@@ -56,7 +56,7 @@ let swiftSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "Vsexpr",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v15)],
     products: [
         .library(name: "Vsexpr", targets: ["Vsexpr"])
     ],
