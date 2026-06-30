@@ -1,3 +1,4 @@
+import Foundation
 // swift-tools-version: 6.3
 import PackageDescription
 
@@ -40,11 +41,30 @@ let swiftSettings: [SwiftSetting] = [
 ]
 
 #if os(macOS)
+    func findCxxIncludePath() -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = ["--sdk", "macosx", "--show-sdk-path"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !output.isEmpty
+            {
+                return "\(output)/usr/include/c++/v1"
+            }
+        } catch {}
+        return
+            "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1"
+    }
+
     let cxxUnsafeFlags = [
         "-Xcc", "-std=c++2b",
         "-Xcc", "-isystem",
-        "-Xcc",
-        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1",
+        "-Xcc", findCxxIncludePath(),
     ]
     let stdLib = "c++"
 #else
