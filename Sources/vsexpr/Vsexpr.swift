@@ -415,21 +415,23 @@ where Base.Element == UInt8, Base.Failure == any Error {
     }
 }
 
-// MARK: - URLSession.AsyncBytes Convenience
+#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+    // MARK: - URLSession.AsyncBytes Convenience
 
-extension VsexprAsyncSequence where Base == URLSession.AsyncBytes {
-    /// Creates an asynchronous sequence from a `URLSession` byte stream.
-    ///
-    /// - Parameters:
-    ///   - bytes: An asynchronous byte source from `URLSession.bytes(from:)`.
-    ///   - decoder: The decoder to use for each frame.
-    ///   - strategy: The framing strategy for detecting complete expressions.
-    public init(
-        _ bytes: URLSession.AsyncBytes, decoder: VsexprDecoder = VsexprDecoder(),
-        strategy: VsexprFramingStrategy = .lineDelimited
-    ) {
-        self.base = bytes
-        self.decoder = decoder
-        self.strategy = strategy
+    extension VsexprAsyncSequence where Base == URLSession.AsyncBytes {
+        /// Creates an asynchronous sequence from a `URLSession` byte stream.
+        ///
+        /// - Parameters:
+        ///   - bytes: An asynchronous byte source from `URLSession.bytes(from:)`.
+        ///   - decoder: The decoder to use for each frame.
+        ///   - strategy: The framing strategy for detecting complete expressions.
+        public init(
+            _ bytes: URLSession.AsyncBytes, decoder: VsexprDecoder = VsexprDecoder(),
+            strategy: VsexprFramingStrategy = .lineDelimited
+        ) {
+            self.base = bytes
+            self.decoder = decoder
+            self.strategy = strategy
+        }
     }
-}
+#endif
