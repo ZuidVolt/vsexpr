@@ -243,13 +243,14 @@ func tokenizerThroughputBaseline() async {
     let payload = String(repeating: "(host 127.0.0.1) (port 8080) (debug_mode true) ", count: 1000)
     let iterations = 100
 
-    let start = CFAbsoluteTimeGetCurrent()
-    for _ in 0..<iterations {
-        _ = try? Vsexpr.tokenize(payload)
+    let clock = ContinuousClock()
+    let elapsed = clock.measure {
+        for _ in 0..<iterations {
+            _ = try? Vsexpr.tokenize(payload)
+        }
     }
-    let elapsed = CFAbsoluteTimeGetCurrent() - start
-
-    let bytesPerSecond = Double(payload.utf8.count * iterations) / elapsed
+    let elapsedSeconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) * 1e-18
+    let bytesPerSecond = Double(payload.utf8.count * iterations) / elapsedSeconds
     print("Tokenization throughput: \(String(format: "%.0f", bytesPerSecond)) bytes/sec")
     #expect(bytesPerSecond > 10_000_000)
 }
