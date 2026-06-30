@@ -19,11 +19,21 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Cache Swift dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            !.build/**/vsexpr*
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
       - name: Build DocC
         run: |
@@ -36,6 +46,7 @@ jobs:
 
       - name: Add Redirect to Landing Page
         run: |
+          touch ./docs/.nojekyll
           cat << 'EOF' > ./docs/index.html
           <!DOCTYPE html>
           <html>
