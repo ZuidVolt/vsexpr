@@ -140,6 +140,31 @@ public final class VsexprDecoder: @unchecked Sendable {
         stream.keyDecodingStrategy = keyDecodingStrategy
         return try T(from: &stream)
     }
+
+    // MARK: Streaming (Progressive Ingestion)
+
+    /// Progressively decodes a sequence of values from an asynchronous byte stream.
+    ///
+    /// Each top-level S-expression in the stream is independently framed, tokenized,
+    /// and decoded. Memory usage is bounded by the size of the largest single frame,
+    /// regardless of total stream length.
+    ///
+    /// - Parameters:
+    ///   - type: The `Decodable` type to decode from each frame.
+    ///   - bytes: An asynchronous byte source (e.g., `URLSession.bytes(from:)`).
+    ///   - strategy: The framing strategy for detecting complete expressions.
+    ///     Defaults to `.balancedParentheses`.
+    /// - Returns: A `VsexprAsyncSequence` that yields decoded values as complete
+    ///   S-expression frames are detected in the stream.
+    ///
+    /// - Note: Both `Decodable` and `VsexprDecodable` types are supported via
+    ///   Swift's overload resolution. This method accepts `Decodable`; for
+    ///   zero-reflection types, the compiler selects the `VsexprDecodable` overload.
+    public func decodeStream<T: Decodable, Base: AsyncSequence>(
+        _ type: T.Type, from bytes: Base, strategy: VsexprFramingStrategy = .lineDelimited
+    ) -> VsexprAsyncSequence<Base, T> where Base.Element == UInt8, Base.Failure == any Error {
+        VsexprAsyncSequence<Base, T>(bytes, decoder: self, strategy: strategy)
+    }
 }
 
 // MARK: - VsexprEncoder (Unified)

@@ -215,6 +215,27 @@ public enum Vsexpr {
         try VsexprEncoder().encodeToString(value)
     }
 
+    /// Creates a streaming decoder for progressive S-expression ingestion.
+    ///
+    /// This is a convenience entry point that creates a `VsexprDecoder` with default
+    /// configuration and returns a `VsexprAsyncSequence` over the provided byte source.
+    ///
+    /// - Parameters:
+    ///   - type: The `Decodable` type to decode from each frame.
+    ///   - bytes: An asynchronous byte source (e.g., `URLSession.bytes(from:)`).
+    ///   - strategy: The framing strategy for detecting complete expressions.
+    ///     Defaults to `.balancedParentheses`.
+    /// - Returns: A `VsexprAsyncSequence` using default decoder configuration
+    ///   (`.convertFromSnakeCase` key strategy).
+    ///
+    /// - Note: For custom key strategies, `userInfo`, or zero-reflection types,
+    ///   create a `VsexprDecoder` instance and call `decodeStream(_:from:strategy:)` directly.
+    public static func parseStream<T: Decodable, Base: AsyncSequence>(
+        _ type: T.Type, from bytes: Base, strategy: VsexprFramingStrategy = .lineDelimited
+    ) -> VsexprAsyncSequence<Base, T> where Base.Element == UInt8, Base.Failure == any Error {
+        VsexprDecoder().decodeStream(type, from: bytes, strategy: strategy)
+    }
+
     /// Computes the line and column location for a byte offset within a payload string.
     ///
     /// This is an internal utility used for lazy error diagnostics. Location computation

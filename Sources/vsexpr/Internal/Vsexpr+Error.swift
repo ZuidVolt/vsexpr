@@ -14,6 +14,7 @@ public enum VsexprError: Sendable, Error, CustomStringConvertible {
     case unexpectedToken(String)
     case nestingDepthExceeded
     case tokenLimitExceeded
+    case framingError(description: String)
 
     public var description: String {
         switch self {
@@ -33,6 +34,8 @@ public enum VsexprError: Sendable, Error, CustomStringConvertible {
             return "Nesting depth exceeded maximum"
         case .tokenLimitExceeded:
             return "Token limit exceeded (\(MAX_TOKENS) tokens)"
+        case .framingError(let description):
+            return "Framing error: \(description)"
         }
     }
 }
