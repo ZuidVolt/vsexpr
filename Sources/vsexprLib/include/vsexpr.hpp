@@ -333,7 +333,8 @@ inline size_t tokenize(std::string_view input, std::span<SExprToken> tokens, SEx
     size_t i = 0;
 
     // Helper: emit atom from scalar region [start, end)
-    auto emit_atoms_in_range = [&](size_t start, size_t end) -> void {
+    auto emit_atoms_in_range = [&](size_t start, size_t end, bool initial_in_string) -> void {
+        bool in_string = initial_in_string;
         size_t j = start;
         while(j < end && count < max_tokens) {
             char c = buffer[j];
@@ -342,12 +343,12 @@ inline size_t tokenize(std::string_view input, std::span<SExprToken> tokens, SEx
                 continue;
             }
             if(__builtin_expect(c == '"', 0)) {
-                if(state.in_string) {
-                    state.in_string = false;
+                if(in_string) {
+                    in_string = false;
                     ++j;
                     continue;
                 }
-                state.in_string = true;
+                in_string = true;
                 size_t str_start = j + 1;
                 ++j;
                 while(j < end && buffer[j] != '"') {
@@ -358,16 +359,16 @@ inline size_t tokenize(std::string_view input, std::span<SExprToken> tokens, SEx
                     }
                 }
                 if(j < end) {
-                    state.in_string = false;
+                    in_string = false;
                     ++j;
                 }
                 SExprToken& t = tokens[count++];
                 t.type = SExprTokenType::ATOM;
                 t.ptr = buffer + str_start;
-                t.length = (!state.in_string) ? (j - 1 - str_start) : (end - str_start);
+                t.length = (!in_string) ? (j - 1 - str_start) : (end - str_start);
                 continue;
             }
-            if(__builtin_expect(state.in_string, 0)) {
+            if(__builtin_expect(in_string, 0)) {
                 ++j;
                 continue;
             }
@@ -398,6 +399,7 @@ inline size_t tokenize(std::string_view input, std::span<SExprToken> tokens, SEx
     size_t seg_start = 0;
     size_t scalar_start = 0;
     while(i + SIMD_BLOCK_SIZE <= length && count < max_tokens) {
+        bool chunk_entry_in_string = state.in_string;
         SimdCharVector<SIMD_BLOCK_SIZE> chunk;
         __builtin_memcpy(&chunk, buffer + i, SIMD_BLOCK_SIZE);
 
@@ -435,8 +437,9 @@ inline size_t tokenize(std::string_view input, std::span<SExprToken> tokens, SEx
 
             // Emit atoms in the gap before this structural marker
             size_t seg_end = i + index;
-            if(seg_end > seg_start && !state.in_string) {
-                emit_atoms_in_range(seg_start, seg_end);
+            if(seg_end > seg_start) {
+                bool initial_in_string = (seg_start == i) ? chunk_entry_in_string : false;
+                emit_atoms_in_range(seg_start, seg_end, initial_in_string);
             }
 
             // Emit the structural token
@@ -475,6 +478,7 @@ inline size_t tokenize(std::string_view input, std::span<SExprToken> tokens, SEx
     // Phase 2: Scalar tail — starts from the last structural marker position
     // to handle any partial atoms spanning chunk boundaries
     if(scalar_start < length && count < max_tokens) {
+        state.in_string = false;
         std::string_view tail(buffer + scalar_start, length - scalar_start);
         count += tokenize_scalar_fallback(tail, tokens.subspan(count), state);
     }

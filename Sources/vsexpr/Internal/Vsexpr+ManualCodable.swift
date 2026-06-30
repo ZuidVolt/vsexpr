@@ -121,8 +121,7 @@ extension String: VsexprEncodable {
         } else {
             for byte in utf8 {
                 if byte == 0x20 || byte == 0x28 || byte == 0x29 || byte == 0x22 || byte == 0x5C || byte == 0x0A
-                    || byte == 0x09 || byte == 0x0D
-                {
+                    || byte == 0x09 || byte == 0x0D {
                     needsQuote = true
                     break
                 }
@@ -187,12 +186,16 @@ extension Bool: VsexprEncodable {
 // MARK: - Strategy-Aware Key Comparison Helper
 
 @inline(always)
-func resolveFileKey(_ swiftKey: String, strategy: VsexprDecoder.KeyDecodingStrategy) -> String {
+func matchFileKey(_ tokenKey: String, expectedSwiftKey: String, strategy: VsexprDecoder.KeyDecodingStrategy) -> Bool {
     switch strategy {
     case .useDefaultKeys:
-        return swiftKey
+        return tokenKey == expectedSwiftKey
     case .convertFromSnakeCase:
-        return camelToSnake(swiftKey)
+        return snakeToCamel(tokenKey) == expectedSwiftKey
+    case .convertFromKebabCase:
+        return kebabToCamel(tokenKey) == expectedSwiftKey
+    case .custom(let closure):
+        return closure([AnyCodingKey(stringValue: tokenKey)]).stringValue == expectedSwiftKey
     }
 }
 
@@ -210,9 +213,8 @@ extension SExprTokenStream {
             skipPastClose()
             return nil
         }
-        let expected = resolveFileKey(key, strategy: keyDecodingStrategy)
         let tokenKey = tokenText(keyToken)
-        guard tokenKey == expected else {
+        guard matchFileKey(tokenKey, expectedSwiftKey: key, strategy: keyDecodingStrategy) else {
             skipPastClose()
             return nil
         }

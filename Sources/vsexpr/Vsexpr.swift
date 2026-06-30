@@ -270,20 +270,32 @@ public enum Vsexpr {
 /// and flexibility for various deployment profiles (configuration files, Unix
 /// pipelines, network protocols).
 public enum VsexprFramingStrategy: Sendable {
-    /// Each expression must be enclosed in top-level matching parentheses.
-    /// Frame is detected when paren depth returns to 0 after positive excursion.
-    /// Best for structured command envelopes and configuration blocks.
-    case balancedParentheses
-
     /// Each expression is terminated by a newline (`0x0A`).
     /// Allows raw atoms at the root level. CRLF (`\r\n`) is handled transparently.
     /// Standard for Unix pipeline integrations.
     case lineDelimited
 
+    /// Each expression must be enclosed in top-level matching parentheses.
+    /// Frame is detected when paren depth returns to 0 after positive excursion.
+    /// Best for structured command envelopes and configuration blocks.
+    case balancedParentheses
+
+    /// Each expression is terminated by a null byte (`0x00`).
+    /// Ideal for Unix pipelines and protocols where payloads contain raw newlines.
+    case nullDelimited
+
+    /// Each payload is framed using DJB Netstrings protocol (`[len]:[payload],`).
+    /// Standard framing format for text-based streaming sockets.
+    case netstring
+
     /// Each payload is prefixed by a fixed-size big-endian byte count header.
     /// The framing layer reads the header, then extracts exactly that many payload bytes.
     /// Eliminates streaming scan overhead over raw network TCP sockets.
     case lengthPrefixed(headerSize: LengthHeaderSize)
+
+    /// A custom frame detection strategy defined by a sendable closure.
+    /// The closure is called for each incoming byte and should return true when a complete frame is bounded.
+    case custom(@Sendable (_ byte: UInt8, _ bufferCount: Int) throws -> Bool)
 
     public enum LengthHeaderSize: Sendable {
         case uint16BigEndian
@@ -389,13 +401,13 @@ where Base.Element == UInt8, Base.Failure == any Error {
 
             // Strategy-specific EOF handling
             switch strategy {
-            case .lengthPrefixed:
+            case .lengthPrefixed, .netstring, .custom:
                 throw VsexprError.unexpectedEnd
             case .balancedParentheses:
                 throw VsexprError.syntaxError(
                     description: "Stream ended with unterminated expression")
-            case .lineDelimited:
-                // Line-delimited inputs can safely process trailing non-newline data at EOF
+            case .lineDelimited, .nullDelimited:
+                // Line/Null-delimited inputs can safely process trailing non-newline/non-null data at EOF
                 frameCount += 1
                 return try decodeFrame()
             }

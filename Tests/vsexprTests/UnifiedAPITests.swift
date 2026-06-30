@@ -104,7 +104,7 @@ func manualExtractGroupStrategyAware() async throws {
 @Test
 func vsexprParseConvenienceRoutesThroughDecoder() async throws {
     let config = try Vsexpr.parse(
-        CodableConfig.self, from: "(host example.com) (port 80) (debug_mode false)")
+        CodableConfig.self, from: "(host example.com) (port 80) (debugMode false)")
     #expect(config.host == "example.com")
     #expect(config.port == 80)
     #expect(config.debugMode == false)

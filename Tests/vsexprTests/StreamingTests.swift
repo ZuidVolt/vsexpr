@@ -84,7 +84,7 @@ func frameTrackerUnexpectedCloseParen() {
 
 @Test
 func streamingSingleFrame() async throws {
-    let input = "((host example.com) (port 80) (debug_mode false))"
+    let input = "((host example.com) (port 80) (debugMode false))"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -99,9 +99,9 @@ func streamingSingleFrame() async throws {
 @Test
 func streamingMultipleFrames() async throws {
     let input =
-        "((host a.com) (port 1) (debug_mode true))"
-        + "((host b.com) (port 2) (debug_mode false))"
-        + "((host c.com) (port 3) (debug_mode true))"
+        "((host a.com) (port 1) (debugMode true))"
+        + "((host b.com) (port 2) (debugMode false))"
+        + "((host c.com) (port 3) (debugMode true))"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -117,7 +117,7 @@ func streamingMultipleFrames() async throws {
 @Test
 func streamingNestedStruct() async throws {
     // swiftlint:disable:next GroupNumericLiterals
-    let input = "((node_id server-1) (metrics (cpu_utilization 85.2) (memory_used_bytes 12345678)))"
+    let input = "((nodeId server-1) (metrics (cpuUtilization 85.2) (memoryUsedBytes 12345678)))"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -157,7 +157,7 @@ func streamingSnakeStrategy() async throws {
 
 @Test
 func streamingPartialFrameAtEOF() async throws {
-    let input = "((host example.com) (port 80) (debug_mode true))"
+    let input = "((host example.com) (port 80) (debugMode true))"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -170,7 +170,7 @@ func streamingPartialFrameAtEOF() async throws {
 
 @Test
 func streamingParseConvenience() async throws {
-    let input = "((host example.com) (port 80) (debug_mode false))"
+    let input = "((host example.com) (port 80) (debugMode false))"
     let data = Data(input.utf8)
     let seq = Vsexpr.parseStream(
         CodableConfig.self, from: DataBytes(data), strategy: .balancedParentheses)
@@ -249,7 +249,7 @@ func frameTrackerLineDelimitedNoTrailingNewline() throws {
 
 @Test
 func streamingLineDelimitedSingle() async throws {
-    let input = "(host example.com) (port 80) (debug_mode false)\n"
+    let input = "(host example.com) (port 80) (debugMode false)\n"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -263,8 +263,8 @@ func streamingLineDelimitedSingle() async throws {
 @Test
 func streamingLineDelimitedMultiple() async throws {
     let input =
-        "(host a.com) (port 1) (debug_mode true)\n"
-        + "(host b.com) (port 2) (debug_mode false)\n"
+        "(host a.com) (port 1) (debugMode true)\n"
+        + "(host b.com) (port 2) (debugMode false)\n"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -278,7 +278,7 @@ func streamingLineDelimitedMultiple() async throws {
 
 @Test
 func streamingLineDelimitedNoTrailingNewline() async throws {
-    let input = "(host example.com) (port 80) (debug_mode false)"
+    let input = "(host example.com) (port 80) (debugMode false)"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -333,8 +333,8 @@ func frameTrackerLengthPrefixedZeroLength() throws {
 
 @Test
 func streamingLengthPrefixedUint16() async throws {
-    let expr1 = "(host a.com) (port 1) (debug_mode true)"
-    let expr2 = "(host b.com) (port 2) (debug_mode false)"
+    let expr1 = "(host a.com) (port 1) (debugMode true)"
+    let expr2 = "(host b.com) (port 2) (debugMode false)"
     let utf8First = Array(expr1.utf8)
     let utf8Second = Array(expr2.utf8)
     var data = Data()
@@ -356,7 +356,7 @@ func streamingLengthPrefixedUint16() async throws {
 
 @Test
 func streamingLengthPrefixedUint32() async throws {
-    let expr = "(host example.com) (port 443) (debug_mode true)"
+    let expr = "(host example.com) (port 443) (debugMode true)"
     let utf8 = Array(expr.utf8)
     var data = Data()
     data.append(contentsOf: [0x00, 0x00, 0x00, UInt8(utf8.count)])
@@ -410,7 +410,7 @@ func streamingLengthPrefixedEOFTruncation() async throws {
 
 @Test
 func streamingParseStreamWithStrategy() async throws {
-    let input = "(host example.com) (port 80) (debug_mode false)\n"
+    let input = "(host example.com) (port 80) (debugMode false)\n"
     let data = Data(input.utf8)
     let seq = Vsexpr.parseStream(
         CodableConfig.self, from: DataBytes(data), strategy: .lineDelimited)

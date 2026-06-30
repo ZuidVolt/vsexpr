@@ -9,7 +9,7 @@ import Testing
 /// No newlines means one frame at EOF. Decoder sees all keys → success.
 @Test
 func wrongStrategyFlatInputLineDelimited() async throws {
-    let input = "(host example.com) (port 80) (debug_mode false)"
+    let input = "(host example.com) (port 80) (debugMode false)"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -25,8 +25,8 @@ func wrongStrategyFlatInputLineDelimited() async throws {
 @Test
 func wrongStrategyNewlineDelimitedBalanced() async throws {
     let input =
-        "(host a.com) (port 1) (debug_mode true)\n"
-        + "(host b.com) (port 2) (debug_mode false)\n"
+        "(host a.com) (port 1) (debugMode true)\n"
+        + "(host b.com) (port 2) (debugMode false)\n"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(
@@ -47,7 +47,7 @@ func wrongStrategyNewlineDelimitedBalanced() async throws {
 /// depending on whether the tokenizer can make sense of the header bytes.
 @Test
 func wrongStrategyLengthPrefixedLineDelimited() async throws {
-    let expr = "(host example.com) (port 443) (debug_mode true)"
+    let expr = "(host example.com) (port 443) (debugMode true)"
     let utf8 = Array(expr.utf8)
     var data = Data()
     data.append(contentsOf: [0x00, UInt8(utf8.count)])
@@ -80,7 +80,7 @@ func wrongStrategyEmptyStream() async throws {
 /// Post-EOF: frameCount is 0, so framingMismatchError() is thrown.
 @Test
 func wrongStrategyFlatAtomsBalanced() async throws {
-    let input = "host example.com port 80 debug_mode false"
+    let input = "host example.com port 80 debugMode false"
     let data = Data(input.utf8)
     let decoder = VsexprDecoder()
     let seq = decoder.decodeStream(

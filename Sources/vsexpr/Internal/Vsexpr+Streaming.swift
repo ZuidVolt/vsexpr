@@ -28,6 +28,18 @@ struct VsexprFrameTracker {
     private var headerBytesAccumulated: Int = 0
     private var headerValue: UInt32 = 0
 
+    // Netstring state
+    private(set) var netstringOriginalLength: Int = 0
+    private var netstringBytesRemaining: Int = 0
+    private var netstringDigits: Int = 0
+    private var netstringState: NetstringState = .readingLength
+
+    private enum NetstringState {
+        case readingLength
+        case readingPayload
+        case readingComma
+    }
+
     /// Creates a frame tracker for the given framing strategy.
     ///
     /// - Parameter strategy: The framing strategy to use for frame detection.
@@ -60,8 +72,17 @@ struct VsexprFrameTracker {
         case .lineDelimited:
             return feedLineDelimited(byte)
 
+        case .nullDelimited:
+            return feedNullDelimited(byte)
+
+        case .netstring:
+            return try feedNetstring(byte)
+
         case .lengthPrefixed(let headerSize):
             return feedLengthPrefixed(byte, bufferCount: bufferCount, headerSize: headerSize)
+
+        case .custom(let closure):
+            return try closure(byte, bufferCount)
         }
     }
 
@@ -74,6 +95,10 @@ struct VsexprFrameTracker {
         expectedPayloadSize = nil
         headerBytesAccumulated = 0
         headerValue = 0
+        netstringOriginalLength = 0
+        netstringBytesRemaining = 0
+        netstringDigits = 0
+        netstringState = .readingLength
     }
 
     /// Whether the tracker has accumulated partial data since the last reset.
@@ -81,10 +106,14 @@ struct VsexprFrameTracker {
         switch strategy {
         case .balancedParentheses:
             return hasContent || parenDepth > 0 || inString
-        case .lineDelimited:
+        case .lineDelimited, .nullDelimited:
             return hasContent
         case .lengthPrefixed:
             return expectedPayloadSize != nil || headerBytesAccumulated > 0
+        case .netstring:
+            return netstringDigits > 0
+        case .custom:
+            return false
         }
     }
 
@@ -167,6 +196,61 @@ struct VsexprFrameTracker {
         }
         return false
     }
+
+    // MARK: - Null Delimited
+
+    private mutating func feedNullDelimited(_ byte: UInt8) -> Bool {
+        if byte == 0x00 {
+            let frameComplete = hasContent
+            hasContent = false
+            return frameComplete
+        }
+        hasContent = true
+        return false
+    }
+
+    // MARK: - Netstring
+
+    private mutating func feedNetstring(_ byte: UInt8) throws -> Bool {
+        switch netstringState {
+        case .readingLength:
+            if byte == 0x3A { // ':'
+                guard netstringDigits > 0 else {
+                    throw VsexprError.syntaxError(description: "Empty netstring length")
+                }
+                netstringState = .readingPayload
+                netstringBytesRemaining = netstringOriginalLength
+                if netstringOriginalLength == 0 {
+                    netstringState = .readingComma
+                }
+            } else if byte >= 0x30, byte <= 0x39 { // '0'-'9'
+                if netstringDigits == 1, netstringOriginalLength == 0 {
+                    throw VsexprError.syntaxError(description: "Netstring length cannot have leading zeros")
+                }
+                netstringOriginalLength = netstringOriginalLength * 10 + Int(byte - 0x30)
+                netstringDigits += 1
+                if netstringOriginalLength > 10_000_000 {
+                    throw VsexprError.syntaxError(description: "Netstring length limit exceeded")
+                }
+            } else {
+                throw VsexprError.syntaxError(description: "Invalid character in netstring length")
+            }
+            return false
+
+        case .readingPayload:
+            netstringBytesRemaining -= 1
+            if netstringBytesRemaining == 0 {
+                netstringState = .readingComma
+            }
+            return false
+
+        case .readingComma:
+            if byte != 0x2C { // ','
+                throw VsexprError.syntaxError(description: "Netstring must terminate with a comma")
+            }
+            return true
+        }
+    }
 }
 
 // MARK: - AsyncIterator Private Helpers
@@ -179,7 +263,12 @@ extension VsexprAsyncSequence.AsyncIterator {
         guard totalFrameBytes >= headerOffset else {
             throw VsexprError.unexpectedEnd
         }
-        let purePayloadBytes = totalFrameBytes - headerOffset
+        let purePayloadBytes: Int
+        if case .netstring = strategy {
+            purePayloadBytes = tracker.netstringOriginalLength
+        } else {
+            purePayloadBytes = totalFrameBytes - headerOffset
+        }
         let keyDecodingStrategy = decoder.keyDecodingStrategy
         let userInfo = decoder.userInfo
         let currentLine = tracker.currentLine
@@ -249,10 +338,14 @@ extension VsexprAsyncSequence.AsyncIterator {
 
     @inline(always)
     func caseLengthHeaderOffset(for strategy: VsexprFramingStrategy) -> Int {
-        if case .lengthPrefixed(let size) = strategy {
+        switch strategy {
+        case .lengthPrefixed(let size):
             return size == .uint16BigEndian ? 2 : 4
+        case .netstring:
+            return buffer.count - 1 - tracker.netstringOriginalLength
+        default:
+            return 0
         }
-        return 0
     }
 
     @inline(always)
@@ -260,7 +353,10 @@ extension VsexprAsyncSequence.AsyncIterator {
         switch s {
         case .balancedParentheses: return "balancedParentheses"
         case .lineDelimited: return "lineDelimited"
+        case .nullDelimited: return "nullDelimited"
+        case .netstring: return "netstring"
         case .lengthPrefixed: return "lengthPrefixed"
+        case .custom: return "custom"
         }
     }
 

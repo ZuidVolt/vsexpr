@@ -1,6 +1,21 @@
 public import Foundation
 import vsexprLib
 
+struct AnyCodingKey: CodingKey, Sendable {
+    var stringValue: String
+    var intValue: Int?
+
+    init(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
+        self.intValue = intValue
+    }
+}
+
 // MARK: - Optional Encoding Protocol
 
 private protocol OptionalEncoding {
@@ -54,41 +69,37 @@ func snakeToCamel(_ snake: String) -> String {
     return result
 }
 
-@inline(always)
-func hashSnakeKey(_ camelKey: String, strategy: VsexprDecoder.KeyDecodingStrategy = .convertFromSnakeCase) -> UInt64 {
-    switch strategy {
-    case .useDefaultKeys:
-        return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 64) { buffer in
-            var count = 0
-            for byte in camelKey.utf8 {
-                guard count < 63 else { break }
-                buffer[count] = byte
-                count += 1
-            }
-            return fnv1a64(bytes: UnsafeRawBufferPointer(start: buffer.baseAddress!, count: count))
-        }
-    case .convertFromSnakeCase:
-        return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 64) { buffer in
-            var count = 0
-            for scalar in camelKey.unicodeScalars {
-                guard count < 63 else { break }
-                let val = UInt8(clamping: scalar.value)
-                if val >= 0x41, val <= 0x5A {
-                    if count > 0 {
-                        buffer[count] = 0x5F
-                        count += 1
-                    }
-                    buffer[count] = val | 0x20
-                    count += 1
+func kebabToCamel(_ kebab: String) -> String {
+    guard kebab.contains("-") else { return kebab }
+    var result = ""
+    var capitalizeNext = false
+    for byte in kebab.utf8 {
+        if byte == 0x2D { // '-'
+            capitalizeNext = true
+        } else {
+            if capitalizeNext {
+                if byte >= 0x61, byte <= 0x7A {
+                    result.append(Character(UnicodeScalar(byte - 0x20)))
                 } else {
-                    buffer[count] = val
-                    count += 1
+                    result.append(Character(UnicodeScalar(byte)))
                 }
+                capitalizeNext = false
+            } else {
+                result.append(Character(UnicodeScalar(byte)))
             }
-            return fnv1a64(bytes: UnsafeRawBufferPointer(start: buffer.baseAddress!, count: count))
         }
     }
+    return result
 }
+
+@inline(always)
+func hashKeyString(_ str: String) -> UInt64 {
+    var key = str
+    return key.withUTF8 { buffer in
+        fnv1a64(bytes: UnsafeRawBufferPointer(buffer))
+    }
+}
+
 
 // MARK: - VsexprDecoder (Unified)
 
@@ -96,9 +107,11 @@ public final class VsexprDecoder: @unchecked Sendable {
     public enum KeyDecodingStrategy: Sendable {
         case useDefaultKeys
         case convertFromSnakeCase
+        case convertFromKebabCase
+        case custom(@Sendable ([any CodingKey]) -> any CodingKey)
     }
 
-    public var keyDecodingStrategy: KeyDecodingStrategy = .convertFromSnakeCase
+    public var keyDecodingStrategy: KeyDecodingStrategy = .useDefaultKeys
     public var userInfo: [CodingUserInfoKey: Any] = [:]
 
     public init() {}
@@ -173,9 +186,11 @@ public final class VsexprEncoder: @unchecked Sendable {
     public enum KeyEncodingStrategy: Sendable {
         case useDefaultKeys
         case convertToSnakeCase
+        case convertToKebabCase
+        case custom(@Sendable ([any CodingKey]) -> any CodingKey)
     }
 
-    public var keyEncodingStrategy: KeyEncodingStrategy = .convertToSnakeCase
+    public var keyEncodingStrategy: KeyEncodingStrategy = .useDefaultKeys
     public var userInfo: [CodingUserInfoKey: Any] = [:]
 
     public init() {}
@@ -224,7 +239,7 @@ final class VsexprDecoderImpl: Decoder {
 
     init(
         stream: SExprTokenStream, payload: String,
-        strategy: VsexprDecoder.KeyDecodingStrategy = .convertFromSnakeCase,
+        strategy: VsexprDecoder.KeyDecodingStrategy = .useDefaultKeys,
         userInfo: [CodingUserInfoKey: Any] = [:]
     ) {
         self.stream = stream
@@ -232,12 +247,36 @@ final class VsexprDecoderImpl: Decoder {
         self.keyDecodingStrategy = strategy
         self.userInfo = userInfo
         let result = stream.collectKeyMapAndStrings()
-        self.keyMap = result.map
-        if strategy == .convertFromSnakeCase {
-            self.keyStrings = result.strings.map { snakeToCamel($0) }
-        } else {
-            self.keyStrings = result.strings
+        
+        var mappedMap: [UInt64: Range<Int>] = [:]
+        var mappedStrings: [String] = []
+        mappedMap.reserveCapacity(result.map.count)
+        mappedStrings.reserveCapacity(result.strings.count)
+        
+        for key in result.strings {
+            let originalHash = hashKeyString(key)
+            guard let range = result.map[originalHash] else { continue }
+            
+            let mappedKey: String
+            switch strategy {
+            case .useDefaultKeys:
+                mappedKey = key
+            case .convertFromSnakeCase:
+                mappedKey = snakeToCamel(key)
+            case .convertFromKebabCase:
+                mappedKey = kebabToCamel(key)
+            case .custom(let closure):
+                let pathKey = AnyCodingKey(stringValue: key)
+                mappedKey = closure(codingPath + [pathKey]).stringValue
+            }
+            
+            mappedStrings.append(mappedKey)
+            let mappedHash = hashKeyString(mappedKey)
+            mappedMap[mappedHash] = range
         }
+        
+        self.keyMap = mappedMap
+        self.keyStrings = mappedStrings
     }
 
     func container<Key: CodingKey>(
@@ -267,7 +306,7 @@ struct VsexprKeyedDecodingContainer<K: CodingKey>: KeyedDecodingContainerProtoco
     }
 
     func contains(_ key: K) -> Bool {
-        let h = hashSnakeKey(key.stringValue, strategy: decoder.keyDecodingStrategy)
+        let h = hashKeyString(key.stringValue)
         return decoder.keyMap[h] != nil
     }
 
@@ -276,7 +315,7 @@ struct VsexprKeyedDecodingContainer<K: CodingKey>: KeyedDecodingContainerProtoco
     }
 
     private func readAtomText(forKey key: String) throws -> String {
-        let h = hashSnakeKey(key, strategy: decoder.keyDecodingStrategy)
+        let h = hashKeyString(key)
         guard let range = decoder.keyMap[h] else {
             throw VsexprError.missingKey(key)
         }
@@ -402,7 +441,7 @@ struct VsexprKeyedDecodingContainer<K: CodingKey>: KeyedDecodingContainerProtoco
         if type == String.self {
             return try decode(String.self, forKey: key) as! T
         }
-        let h = hashSnakeKey(key.stringValue, strategy: decoder.keyDecodingStrategy)
+        let h = hashKeyString(key.stringValue)
         guard let range = decoder.keyMap[h] else {
             throw VsexprError.missingKey(key.stringValue)
         }
@@ -420,7 +459,7 @@ struct VsexprKeyedDecodingContainer<K: CodingKey>: KeyedDecodingContainerProtoco
     func nestedContainer<NestedKey: CodingKey>(
         keyedBy type: NestedKey.Type, forKey key: K
     ) throws -> KeyedDecodingContainer<NestedKey> {
-        let h = hashSnakeKey(key.stringValue, strategy: decoder.keyDecodingStrategy)
+        let h = hashKeyString(key.stringValue)
         guard let range = decoder.keyMap[h] else {
             throw VsexprError.missingKey(key.stringValue)
         }
@@ -437,7 +476,7 @@ struct VsexprKeyedDecodingContainer<K: CodingKey>: KeyedDecodingContainerProtoco
     }
 
     func nestedUnkeyedContainer(forKey key: K) throws -> any UnkeyedDecodingContainer {
-        let h = hashSnakeKey(key.stringValue, strategy: decoder.keyDecodingStrategy)
+        let h = hashKeyString(key.stringValue)
         guard let range = decoder.keyMap[h] else {
             throw VsexprError.missingKey(key.stringValue)
         }
@@ -477,8 +516,7 @@ struct VsexprUnkeyedDecodingContainer: UnkeyedDecodingContainer {
     mutating func decodeNil() -> Bool {
         if decoder.stream.isAtEnd { return true }
         if let token = decoder.stream.peek(), s_expr_token_is_atom(token),
-            tokenText(token) == "nil"
-        {
+            tokenText(token) == "nil" {
             decoder.stream.advance()
             return true
         }
@@ -669,8 +707,7 @@ struct VsexprSingleValueDecodingContainer: SingleValueDecodingContainer {
     func decodeNil() -> Bool {
         if decoder.stream.isAtEnd { return true }
         if let token = decoder.stream.peek(), s_expr_token_is_atom(token),
-            tokenText(token) == "nil"
-        {
+            tokenText(token) == "nil" {
             var s = decoder.stream
             s.advance()
             decoder.stream = s
@@ -856,7 +893,7 @@ extension VsexprEncoderImpl {
                 let val = UInt8(clamping: scalar.value)
                 if val >= 0x41, val <= 0x5A {
                     if !isFirst {
-                        writeByte(0x5F)
+                        writeByte(0x5F) // '_'
                     }
                     writeByte(val | 0x20)
                 } else {
@@ -864,6 +901,24 @@ extension VsexprEncoderImpl {
                 }
                 isFirst = false
             }
+        case .convertToKebabCase:
+            var isFirst = true
+            for scalar in camelKey.unicodeScalars {
+                let val = UInt8(clamping: scalar.value)
+                if val >= 0x41, val <= 0x5A {
+                    if !isFirst {
+                        writeByte(0x2D) // '-'
+                    }
+                    writeByte(val | 0x20)
+                } else {
+                    writeByte(val)
+                }
+                isFirst = false
+            }
+        case .custom(let closure):
+            let pathKey = AnyCodingKey(stringValue: camelKey)
+            let mappedKey = closure(codingPath + [pathKey])
+            writeString(mappedKey.stringValue)
         }
     }
 
@@ -875,8 +930,7 @@ extension VsexprEncoderImpl {
         } else {
             for byte in value.utf8 {
                 if byte == 0x20 || byte == 0x28 || byte == 0x29 || byte == 0x22 || byte == 0x5C || byte == 0x0A
-                    || byte == 0x09 || byte == 0x0D
-                {
+                    || byte == 0x09 || byte == 0x0D {
                     needsQuote = true
                     break
                 }

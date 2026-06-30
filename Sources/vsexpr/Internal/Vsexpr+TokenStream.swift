@@ -80,7 +80,7 @@ public struct SExprTokenStream: @unchecked Sendable {
 
     init(
         startOffset: Int, count: Int, storage: TokenStorage, truncated: Bool = false,
-        strategy: VsexprDecoder.KeyDecodingStrategy = .convertFromSnakeCase
+        strategy: VsexprDecoder.KeyDecodingStrategy = .useDefaultKeys
     ) {
         self._storage = storage
         self.startOffset = startOffset
@@ -147,9 +147,8 @@ public struct SExprTokenStream: @unchecked Sendable {
             skipPastClose()
             return nil
         }
-        let expected = resolveFileKey(key, strategy: keyDecodingStrategy)
         let tokenKey = tokenText(keyToken)
-        guard tokenKey == expected else {
+        guard matchFileKey(tokenKey, expectedSwiftKey: key, strategy: keyDecodingStrategy) else {
             skipPastClose()
             return nil
         }

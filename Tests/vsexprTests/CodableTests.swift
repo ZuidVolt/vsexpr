@@ -8,7 +8,7 @@ import Testing
 
 @Test
 func codableDecodesKeysInAnyOrder() async throws {
-    let input = "(port 443) (host 0.0.0.0) (debug_mode true)"
+    let input = "(port 443) (host 0.0.0.0) (debugMode true)"
     let config = try Vsexpr.parse(CodableConfig.self, from: input)
     #expect(config.host == "0.0.0.0")
     #expect(config.port == 443)
@@ -17,7 +17,7 @@ func codableDecodesKeysInAnyOrder() async throws {
 
 @Test
 func codableDecodesReverseOrder() async throws {
-    let input = "(debug_mode false) (port 9090) (host 10.0.0.1)"
+    let input = "(debugMode false) (port 9090) (host 10.0.0.1)"
     let config = try Vsexpr.parse(CodableConfig.self, from: input)
     #expect(config.host == "10.0.0.1")
     #expect(config.port == 9090)
@@ -64,7 +64,7 @@ private struct NestedConfig: Decodable {
 
 @Test
 func codableDecodesNestedStruct() async throws {
-    let input = "(host 0.0.0.0) (port 443) (tls (min_version 1.2) (enabled true))"
+    let input = "(host 0.0.0.0) (port 443) (tls (minVersion 1.2) (enabled true))"
     let config = try Vsexpr.parse(NestedConfig.self, from: input)
     #expect(config.host == "0.0.0.0")
     #expect(config.port == 443)
@@ -74,7 +74,7 @@ func codableDecodesNestedStruct() async throws {
 
 @Test
 func codableDecodesNestedStructReverseOrder() async throws {
-    let input = "(tls (enabled false) (min_version 1.1)) (port 8443) (host 127.0.0.1)"
+    let input = "(tls (enabled false) (minVersion 1.1)) (port 8443) (host 127.0.0.1)"
     let config = try Vsexpr.parse(NestedConfig.self, from: input)
     #expect(config.host == "127.0.0.1")
     #expect(config.port == 8443)

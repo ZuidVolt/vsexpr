@@ -259,7 +259,7 @@ func codableDecodeReturnsUnescapedString() async throws {
 
 @Test
 func codableDecodeMultiKeyWithEscapedStrings() async throws {
-    let input = #"(host "my\"host") (port 443) (debug_mode true)"#
+    let input = #"(host "my\"host") (port 443) (debugMode true)"#
     let decoded = try Vsexpr.parse(CodableConfig.self, from: input)
     #expect(decoded.host == "my\"host")
     #expect(decoded.port == 443)
