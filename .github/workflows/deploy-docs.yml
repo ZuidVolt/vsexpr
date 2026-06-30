@@ -25,18 +25,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Swiftly and Swift 6.3
-        run: |
-          curl -L -O https://download.swift.org/swiftly/darwin/swiftly.pkg
-          installer -pkg swiftly.pkg -target CurrentUserHomeDirectory
-          ~/.swiftly/bin/swiftly init --assume-yes
-          ~/.swiftly/bin/swiftly install --use 6.3
-        shell: bash
-
-      - name: Export Swiftly to PATH
-        run: |
-          echo "$HOME/.swiftly/bin" >> $GITHUB_PATH
-        shell: bash
+      - name: Select Xcode 16.3
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.3'
 
       - name: Cache Swift dependencies
         uses: actions/cache@v4
@@ -50,7 +42,7 @@ jobs:
 
       - name: Build DocC
         run: |
-          swift package --allow-writing-to-directory ./docs \
+          xcrun swift package --allow-writing-to-directory ./docs \
             generate-documentation --target Vsexpr \
             --disable-indexing \
             --transform-for-static-hosting \
