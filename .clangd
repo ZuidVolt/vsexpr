@@ -4,6 +4,8 @@ CompileFlags:
     - "-std=c++2b"
     - "-xc++"
     - "-fno-exceptions"
+    - "-isysroot"
+    - "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
     - "-w"
     - "-Werror=return-stack-address"
     - "-Werror=dangling"
@@ -21,7 +23,8 @@ CompileFlags:
     - "-Wreturn-type"
     - "-Wmove"
     - "-Wnrvo"
-  Remove: []
+  Remove:
+    - "-*"
 
 Diagnostics:
   UnusedIncludes: Strict
