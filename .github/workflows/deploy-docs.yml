@@ -61,7 +61,7 @@ jobs:
       - name: Build DocC
         run: |
           swift package --allow-writing-to-directory ./docs \
-            generate-documentation --target vsexpr \
+            generate-documentation --target Vsexpr \
             --disable-indexing \
             --transform-for-static-hosting \
             --hosting-base-path vsexpr \
@@ -74,10 +74,10 @@ jobs:
           <!DOCTYPE html>
           <html>
             <head>
-              <meta http-equiv="refresh" content="0; url=documentation/vsexpr/" />
+              <meta http-equiv="refresh" content="0; url=documentation/Vsexpr/" />
             </head>
             <body>
-              <p>Redirecting to <a href="documentation/vsexpr/">documentation</a>...</p>
+              <p>Redirecting to <a href="documentation/Vsexpr/">documentation</a>...</p>
             </body>
           </html>
           EOF

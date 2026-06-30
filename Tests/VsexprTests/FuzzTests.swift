@@ -1,8 +1,8 @@
 import PropertyBased
 import Testing
-import vsexprLib
+import VsexprLib
 
-@testable import vsexpr
+@testable import Vsexpr
 
 // MARK: - Arbitrary Input Must Not Crash
 

@@ -1,6 +1,6 @@
 import Testing
 
-@testable import vsexpr
+@testable import Vsexpr
 
 // MARK: - useDefaultKeys
 

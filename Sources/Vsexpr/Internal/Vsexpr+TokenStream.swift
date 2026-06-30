@@ -1,4 +1,4 @@
-public import vsexprLib
+public import VsexprLib
 
 @inline(always)
 func fnv1a64(bytes: UnsafeRawBufferPointer) -> UInt64 {

@@ -1,4 +1,4 @@
-import vsexprLib
+import VsexprLib
 
 public struct FileLocation: Sendable, CustomStringConvertible {
     public let line: Int

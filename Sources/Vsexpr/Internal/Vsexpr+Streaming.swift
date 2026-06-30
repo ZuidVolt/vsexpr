@@ -1,5 +1,5 @@
 import Foundation
-import vsexprLib
+import VsexprLib
 
 // MARK: - Frame Tracker
 
@@ -214,7 +214,7 @@ struct VsexprFrameTracker {
     private mutating func feedNetstring(_ byte: UInt8) throws -> Bool {
         switch netstringState {
         case .readingLength:
-            if byte == 0x3A { // ':'
+            if byte == 0x3A {  // ':'
                 guard netstringDigits > 0 else {
                     throw VsexprError.syntaxError(description: "Empty netstring length")
                 }
@@ -223,7 +223,7 @@ struct VsexprFrameTracker {
                 if netstringOriginalLength == 0 {
                     netstringState = .readingComma
                 }
-            } else if byte >= 0x30, byte <= 0x39 { // '0'-'9'
+            } else if byte >= 0x30, byte <= 0x39 {  // '0'-'9'
                 if netstringDigits == 1, netstringOriginalLength == 0 {
                     throw VsexprError.syntaxError(description: "Netstring length cannot have leading zeros")
                 }
@@ -245,7 +245,7 @@ struct VsexprFrameTracker {
             return false
 
         case .readingComma:
-            if byte != 0x2C { // ','
+            if byte != 0x2C {  // ','
                 throw VsexprError.syntaxError(description: "Netstring must terminate with a comma")
             }
             return true

@@ -1,5 +1,5 @@
 public import Foundation
-import vsexprLib
+import VsexprLib
 
 /// The primary namespace for the vsexpr S-expression parsing library.
 ///

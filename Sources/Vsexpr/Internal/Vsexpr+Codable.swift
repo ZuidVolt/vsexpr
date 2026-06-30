@@ -1,5 +1,5 @@
 public import Foundation
-import vsexprLib
+import VsexprLib
 
 struct AnyCodingKey: CodingKey, Sendable {
     var stringValue: String

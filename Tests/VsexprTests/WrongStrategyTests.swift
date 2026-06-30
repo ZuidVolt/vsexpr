@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import vsexpr
+@testable import Vsexpr
 
 // MARK: - Wrong Strategy Failure Mode Tests
 

@@ -55,10 +55,10 @@ let swiftSettings: [SwiftSetting] = [
 #endif
 
 let package = Package(
-    name: "vsexpr",
+    name: "Vsexpr",
     platforms: [.macOS(.v26)],
     products: [
-        .library(name: "vsexpr", targets: ["vsexpr"])
+        .library(name: "Vsexpr", targets: ["Vsexpr"])
     ],
     dependencies: [
         .package(url: "https://github.com/x-sheep/swift-property-based.git", from: "1.0.0"),
@@ -66,24 +66,24 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "vsexprLib",
+            name: "VsexprLib",
             cxxSettings: cxxSettings,
             linkerSettings: [
                 .linkedLibrary(stdLib)
             ]
         ),
         .target(
-            name: "vsexpr",
-            dependencies: ["vsexprLib"],
+            name: "Vsexpr",
+            dependencies: ["VsexprLib"],
             swiftSettings: swiftSettings + [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(cxxUnsafeFlags),
             ]
         ),
         .testTarget(
-            name: "vsexprTests",
+            name: "VsexprTests",
             dependencies: [
-                "vsexpr",
+                "Vsexpr",
                 .product(name: "PropertyBased", package: "swift-property-based"),
             ],
             swiftSettings: swiftSettings + [

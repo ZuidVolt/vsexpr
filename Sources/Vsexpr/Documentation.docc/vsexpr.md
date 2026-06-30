@@ -1,10 +1,10 @@
-# ``vsexpr``
+# ``Vsexpr``
 
-A high-performance S-expression parser built on Clang SIMD vector extensions with a Swift 6 wrappers using seamless C++ interoperability.
+A high-performance S-expression parser built on Clang SIMD vector extensions 
 
 ## Overview
 
-`vsexpr` is designed for ultra-high throughput and allocation-invariant serialization of S-expression data. It targets low-latency networking, config ingestion, and pipeline utility tools in Swift.
+`Vsexpr` is designed for ultra-high throughput and allocation-invariant serialization of S-expression data. It targets low-latency networking, config ingestion, and pipeline utility tools in Swift.
 
 The library provides two distinct paradigms for parsing S-expressions:
 
@@ -18,7 +18,7 @@ The library provides two distinct paradigms for parsing S-expressions:
 Use the `Vsexpr` struct to parse standard Swift types directly from string payloads:
 
 ```swift
-import vsexpr
+import Vsexpr
 
 struct Config: Codable {
     let debugMode: Bool

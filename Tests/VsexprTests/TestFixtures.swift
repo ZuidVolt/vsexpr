@@ -2,7 +2,7 @@ import Foundation
 import PropertyBased
 import Testing
 
-@testable import vsexpr
+@testable import Vsexpr
 
 internal let validAtomChar = Gen.oneOf(
     Gen.lowercaseLetter,
