@@ -18,8 +18,10 @@ func tokenText(_ token: SExprToken) -> String {
 final class TokenStorage: @unchecked Sendable {
     let buffer: UnsafeBufferPointer<CChar>
     let result: TokenizerResult
+    let payloadString: String
 
     init(payload: String) {
+        self.payloadString = payload
         let length = payload.utf8.count
         let ptr = UnsafeMutablePointer<CChar>.allocate(capacity: length + 1)
         payload.withCString { cStr in
@@ -31,10 +33,13 @@ final class TokenStorage: @unchecked Sendable {
     }
 
     init(rawBytes: UnsafeRawBufferPointer) {
+        self.payloadString = ""
         let length = rawBytes.count
         let ptr = UnsafeMutablePointer<CChar>.allocate(capacity: length + 1)
-        rawBytes.baseAddress?.withMemoryRebound(to: CChar.self, capacity: length) { src in
-            ptr.initialize(from: src, count: length)
+        if length > 0 {
+            rawBytes.baseAddress?.withMemoryRebound(to: CChar.self, capacity: length) { src in
+                ptr.initialize(from: src, count: length)
+            }
         }
         ptr[length] = 0
         self.buffer = UnsafeBufferPointer(start: ptr, count: length + 1)
@@ -52,13 +57,18 @@ public struct SExprTokenStream: @unchecked Sendable {
     public let startOffset: Int
     public let truncated: Bool
     public var position: Int
+    public var keyDecodingStrategy: VsexprDecoder.KeyDecodingStrategy
 
-    init(startOffset: Int, count: Int, storage: TokenStorage, truncated: Bool = false) {
+    init(
+        startOffset: Int, count: Int, storage: TokenStorage, truncated: Bool = false,
+        strategy: VsexprDecoder.KeyDecodingStrategy = .convertFromSnakeCase
+    ) {
         self._storage = storage
         self.startOffset = startOffset
         self.count = count
         self.truncated = truncated
         self.position = 0
+        self.keyDecodingStrategy = strategy
     }
 
     public var isAtEnd: Bool {
@@ -107,49 +117,6 @@ public struct SExprTokenStream: @unchecked Sendable {
         }
     }
 
-    public mutating func extractAtomValue(for key: String) -> String? {
-        skipToNextPair()
-        guard !isAtEnd else { return nil }
-
-        guard let openToken = peek(), s_expr_token_is_open_paren(openToken) else { return nil }
-        advance()
-
-        guard let keyToken = peek(), s_expr_token_is_atom(keyToken) else {
-            skipPastClose()
-            return nil
-        }
-        let tokenKey = tokenText(keyToken)
-        guard tokenKey == key else {
-            skipPastClose()
-            return nil
-        }
-        advance()
-
-        guard let valToken = peek(), s_expr_token_is_atom(valToken) else {
-            skipPastClose()
-            return nil
-        }
-        let value = tokenText(valToken)
-        advance()
-
-        skipPastClose()
-        return value
-    }
-
-    public mutating func extractUInt32Value(for key: String) -> UInt32? {
-        guard let str = extractAtomValue(for: key) else { return nil }
-        return UInt32(str)
-    }
-
-    public mutating func extractBoolValue(for key: String) -> Bool? {
-        guard let str = extractAtomValue(for: key) else { return nil }
-        switch str {
-        case "true", "1", "yes", "on": return true
-        case "false", "0", "no", "off": return false
-        default: return nil
-        }
-    }
-
     public mutating func extractGroup(for key: String) -> Self? {
         skipToNextPair()
         guard !isAtEnd else { return nil }
@@ -161,8 +128,9 @@ public struct SExprTokenStream: @unchecked Sendable {
             skipPastClose()
             return nil
         }
+        let expected = resolveFileKey(key, strategy: keyDecodingStrategy)
         let tokenKey = tokenText(keyToken)
-        guard tokenKey == key else {
+        guard tokenKey == expected else {
             skipPastClose()
             return nil
         }
@@ -179,7 +147,8 @@ public struct SExprTokenStream: @unchecked Sendable {
         return Self(
             startOffset: groupStart,
             count: groupEnd - groupStart,
-            storage: _storage
+            storage: _storage,
+            strategy: keyDecodingStrategy
         )
     }
 
@@ -233,7 +202,8 @@ public struct SExprTokenStream: @unchecked Sendable {
                 result[key] = Self(
                     startOffset: groupStart,
                     count: groupEnd - groupStart,
-                    storage: _storage
+                    storage: _storage,
+                    strategy: keyDecodingStrategy
                 )
             }
 

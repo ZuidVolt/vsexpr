@@ -90,21 +90,25 @@ func hashSnakeKey(_ camelKey: String, strategy: VsexprDecoder.KeyDecodingStrateg
     }
 }
 
-// MARK: - VsexprDecoder (Codable)
+// MARK: - VsexprDecoder (Unified)
 
-public struct VsexprDecoder: Sendable {
+public final class VsexprDecoder: @unchecked Sendable {
     public enum KeyDecodingStrategy: Sendable {
         case useDefaultKeys
         case convertFromSnakeCase
     }
 
     public var keyDecodingStrategy: KeyDecodingStrategy = .convertFromSnakeCase
+    public var userInfo: [CodingUserInfoKey: Any] = [:]
 
     public init() {}
 
+    // MARK: Codable (Runtime Reflection)
+
     public func decode<T: Decodable>(_ type: T.Type, from payload: String) throws(VsexprError) -> T {
         let stream = try Vsexpr.tokenize(payload)
-        let decoder = VsexprDecoderImpl(stream: stream, payload: payload, strategy: keyDecodingStrategy)
+        let decoder = VsexprDecoderImpl(
+            stream: stream, payload: payload, strategy: keyDecodingStrategy, userInfo: userInfo)
         do {
             return try T(from: decoder)
         } catch {
@@ -114,16 +118,31 @@ public struct VsexprDecoder: Sendable {
 
     public func decode<T: Decodable>(_ type: T.Type, from data: Data) throws(VsexprError) -> T {
         let stream = try Vsexpr.tokenize(data)
-        let decoder = VsexprDecoderImpl(stream: stream, payload: "", strategy: keyDecodingStrategy)
+        let decoder = VsexprDecoderImpl(
+            stream: stream, payload: "", strategy: keyDecodingStrategy, userInfo: userInfo)
         do {
             return try T(from: decoder)
         } catch {
             throw .syntaxError(description: "\(error)")
         }
     }
+
+    // MARK: VsexprDecodable (Zero-Reflection Manual)
+
+    public func decode<T: VsexprDecodable>(_ type: T.Type, from payload: String) throws(VsexprError) -> T {
+        var stream = try Vsexpr.tokenize(payload)
+        stream.keyDecodingStrategy = keyDecodingStrategy
+        return try T(from: &stream)
+    }
+
+    public func decode<T: VsexprDecodable>(_ type: T.Type, from data: Data) throws(VsexprError) -> T {
+        var stream = try Vsexpr.tokenize(data)
+        stream.keyDecodingStrategy = keyDecodingStrategy
+        return try T(from: &stream)
+    }
 }
 
-// MARK: - VsexprEncoder (Codable)
+// MARK: - VsexprEncoder (Unified)
 
 public final class VsexprEncoder: @unchecked Sendable {
     public enum KeyEncodingStrategy: Sendable {
@@ -132,16 +151,38 @@ public final class VsexprEncoder: @unchecked Sendable {
     }
 
     public var keyEncodingStrategy: KeyEncodingStrategy = .convertToSnakeCase
+    public var userInfo: [CodingUserInfoKey: Any] = [:]
 
     public init() {}
 
-    public func encode<T: Encodable>(_ value: T) throws -> String {
-        let encoder = VsexprEncoderImpl(strategy: keyEncodingStrategy)
+    // MARK: Codable (Runtime Reflection)
+
+    public func encodeToString<T: Encodable>(_ value: T) throws -> String {
+        let encoder = VsexprEncoderImpl(strategy: keyEncodingStrategy, userInfo: userInfo)
         try value.encode(to: encoder)
         if encoder.buffer.last == 0x20 {
             encoder.buffer.removeLast()
         }
         return String(decoding: encoder.buffer, as: UTF8.self)
+    }
+
+    public func encode<T: Encodable>(_ value: T) throws -> Data {
+        Data(try encodeToString(value).utf8)
+    }
+
+    // MARK: VsexprEncodable (Zero-Reflection Manual)
+
+    public func encodeToString<T: VsexprEncodable>(_ value: T) throws(VsexprError) -> String {
+        var result = ""
+        try value.encode(to: &result, strategy: keyEncodingStrategy)
+        if result.hasSuffix(" ") {
+            result.removeLast()
+        }
+        return result
+    }
+
+    public func encode<T: VsexprEncodable>(_ value: T) throws(VsexprError) -> Data {
+        Data(try encodeToString(value).utf8)
     }
 }
 
@@ -152,15 +193,19 @@ final class VsexprDecoderImpl: Decoder {
     var codingPath: [any CodingKey] = []
     let keyMap: [UInt64: Range<Int>]
     let keyStrings: [String]
-    let userInfo: [CodingUserInfoKey: Any] = [:]
+    let userInfo: [CodingUserInfoKey: Any]
     let payload: String
     let keyDecodingStrategy: VsexprDecoder.KeyDecodingStrategy
 
-    init(stream: SExprTokenStream, payload: String, strategy: VsexprDecoder.KeyDecodingStrategy = .convertFromSnakeCase)
-    {
+    init(
+        stream: SExprTokenStream, payload: String,
+        strategy: VsexprDecoder.KeyDecodingStrategy = .convertFromSnakeCase,
+        userInfo: [CodingUserInfoKey: Any] = [:]
+    ) {
         self.stream = stream
         self.payload = payload
         self.keyDecodingStrategy = strategy
+        self.userInfo = userInfo
         let result = stream.collectKeyMapAndStrings()
         self.keyMap = result.map
         if strategy == .convertFromSnakeCase {
@@ -339,7 +384,8 @@ struct VsexprKeyedDecodingContainer<K: CodingKey>: KeyedDecodingContainerProtoco
         let subStream = SExprTokenStream(
             startOffset: decoder.stream.startOffset + range.lowerBound,
             count: range.count,
-            storage: decoder.stream._storage
+            storage: decoder.stream._storage,
+            strategy: decoder.keyDecodingStrategy
         )
         let subDecoder = VsexprDecoderImpl(
             stream: subStream, payload: decoder.payload, strategy: decoder.keyDecodingStrategy)
@@ -356,7 +402,8 @@ struct VsexprKeyedDecodingContainer<K: CodingKey>: KeyedDecodingContainerProtoco
         let subStream = SExprTokenStream(
             startOffset: decoder.stream.startOffset + range.lowerBound,
             count: range.count,
-            storage: decoder.stream._storage
+            storage: decoder.stream._storage,
+            strategy: decoder.keyDecodingStrategy
         )
         let subDecoder = VsexprDecoderImpl(
             stream: subStream, payload: decoder.payload, strategy: decoder.keyDecodingStrategy)
@@ -372,7 +419,8 @@ struct VsexprKeyedDecodingContainer<K: CodingKey>: KeyedDecodingContainerProtoco
         let subStream = SExprTokenStream(
             startOffset: decoder.stream.startOffset + range.lowerBound,
             count: range.count,
-            storage: decoder.stream._storage
+            storage: decoder.stream._storage,
+            strategy: decoder.keyDecodingStrategy
         )
         let subDecoder = VsexprDecoderImpl(
             stream: subStream, payload: decoder.payload, strategy: decoder.keyDecodingStrategy)
@@ -528,7 +576,8 @@ struct VsexprUnkeyedDecodingContainer: UnkeyedDecodingContainer {
         let subStream = SExprTokenStream(
             startOffset: s.startOffset + startPos,
             count: endPos - startPos,
-            storage: s._storage
+            storage: s._storage,
+            strategy: decoder.keyDecodingStrategy
         )
         let subDecoder = VsexprDecoderImpl(
             stream: subStream, payload: decoder.payload, strategy: decoder.keyDecodingStrategy)
@@ -549,7 +598,8 @@ struct VsexprUnkeyedDecodingContainer: UnkeyedDecodingContainer {
         let subStream = SExprTokenStream(
             startOffset: s.startOffset + startPos,
             count: endPos - startPos,
-            storage: s._storage
+            storage: s._storage,
+            strategy: decoder.keyDecodingStrategy
         )
         let nestedDecoder = VsexprDecoderImpl(
             stream: subStream, payload: decoder.payload, strategy: decoder.keyDecodingStrategy)
@@ -567,7 +617,8 @@ struct VsexprUnkeyedDecodingContainer: UnkeyedDecodingContainer {
         let subStream = SExprTokenStream(
             startOffset: s.startOffset + startPos,
             count: endPos - startPos,
-            storage: s._storage
+            storage: s._storage,
+            strategy: decoder.keyDecodingStrategy
         )
         let nestedDecoder = VsexprDecoderImpl(
             stream: subStream, payload: decoder.payload, strategy: decoder.keyDecodingStrategy)
@@ -714,12 +765,16 @@ struct VsexprSingleValueDecodingContainer: SingleValueDecodingContainer {
 
 final class VsexprEncoderImpl: Encoder {
     var codingPath: [any CodingKey] = []
-    var userInfo: [CodingUserInfoKey: Any] = [:]
+    var userInfo: [CodingUserInfoKey: Any]
     var buffer: ContiguousArray<UInt8>
     let keyEncodingStrategy: VsexprEncoder.KeyEncodingStrategy
 
-    init(strategy: VsexprEncoder.KeyEncodingStrategy = .convertToSnakeCase) {
+    init(
+        strategy: VsexprEncoder.KeyEncodingStrategy = .convertToSnakeCase,
+        userInfo: [CodingUserInfoKey: Any] = [:]
+    ) {
         self.keyEncodingStrategy = strategy
+        self.userInfo = userInfo
         self.buffer = ContiguousArray<UInt8>()
         self.buffer.reserveCapacity(4_096)
     }
@@ -885,7 +940,7 @@ struct VsexprKeyedEncodingContainer<K: CodingKey>: KeyedEncodingContainerProtoco
         encoder.writeAscii(") ")
     }
 
-    mutating func encode(_ value: Float, forKey key: K) throws {
+    mutating func encode(_ value: Float, forKey key: K) {
         encode(Double(value), forKey: key)
     }
 
@@ -897,19 +952,19 @@ struct VsexprKeyedEncodingContainer<K: CodingKey>: KeyedEncodingContainerProtoco
         encoder.writeAscii(") ")
     }
 
-    mutating func encode(_ value: Int8, forKey key: K) throws {
+    mutating func encode(_ value: Int8, forKey key: K) {
         encode(Int(value), forKey: key)
     }
 
-    mutating func encode(_ value: Int16, forKey key: K) throws {
+    mutating func encode(_ value: Int16, forKey key: K) {
         encode(Int(value), forKey: key)
     }
 
-    mutating func encode(_ value: Int32, forKey key: K) throws {
+    mutating func encode(_ value: Int32, forKey key: K) {
         encode(Int(value), forKey: key)
     }
 
-    mutating func encode(_ value: Int64, forKey key: K) throws {
+    mutating func encode(_ value: Int64, forKey key: K) {
         encode(Int(value), forKey: key)
     }
 
@@ -921,19 +976,19 @@ struct VsexprKeyedEncodingContainer<K: CodingKey>: KeyedEncodingContainerProtoco
         encoder.writeAscii(") ")
     }
 
-    mutating func encode(_ value: UInt8, forKey key: K) throws {
+    mutating func encode(_ value: UInt8, forKey key: K) {
         encode(UInt(value), forKey: key)
     }
 
-    mutating func encode(_ value: UInt16, forKey key: K) throws {
+    mutating func encode(_ value: UInt16, forKey key: K) {
         encode(UInt(value), forKey: key)
     }
 
-    mutating func encode(_ value: UInt32, forKey key: K) throws {
+    mutating func encode(_ value: UInt32, forKey key: K) {
         encode(UInt(value), forKey: key)
     }
 
-    mutating func encode(_ value: UInt64, forKey key: K) throws {
+    mutating func encode(_ value: UInt64, forKey key: K) {
         encode(UInt(value), forKey: key)
     }
 
@@ -965,48 +1020,48 @@ struct VsexprKeyedEncodingContainer<K: CodingKey>: KeyedEncodingContainerProtoco
         if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: Float?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: Float?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
     mutating func encodeIfPresent(_ value: Int?, forKey key: K) {
         if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: Int8?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int8?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: Int16?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int16?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: Int32?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int32?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: Int64?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: Int64?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
     mutating func encodeIfPresent(_ value: UInt?, forKey key: K) {
         if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: UInt8?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt8?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: UInt16?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt16?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: UInt32?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt32?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
-    mutating func encodeIfPresent(_ value: UInt64?, forKey key: K) throws {
-        if let v = value { try encode(v, forKey: key) }
+    mutating func encodeIfPresent(_ value: UInt64?, forKey key: K) {
+        if let v = value { encode(v, forKey: key) }
     }
 
     mutating func encodeIfPresent<T: Encodable>(_ value: T?, forKey key: K) throws {

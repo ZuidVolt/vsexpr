@@ -1,5 +1,26 @@
 import vsexprLib
 
+// MARK: - Key Transformation Helper
+
+@inline(always)
+func camelToSnake(_ camelKey: String) -> String {
+    var result = ""
+    var isFirst = true
+    for scalar in camelKey.unicodeScalars {
+        let val = UInt8(clamping: scalar.value)
+        if val >= 0x41, val <= 0x5A {
+            if !isFirst {
+                result.append("_")
+            }
+            result.append(Character(UnicodeScalar(val | 0x20)))
+        } else {
+            result.append(Character(scalar))
+        }
+        isFirst = false
+    }
+    return result
+}
+
 // MARK: - Manual Decoding Protocol
 
 public protocol VsexprDecodable: Sendable {
@@ -83,11 +104,17 @@ extension Bool: VsexprDecodable {
 // MARK: - Manual Encoding Protocol
 
 public protocol VsexprEncodable: Sendable {
-    func encode(to string: inout String) throws(VsexprError)
+    func encode(to string: inout String, strategy: VsexprEncoder.KeyEncodingStrategy) throws(VsexprError)
+}
+
+extension VsexprEncodable {
+    public func encode(to string: inout String) throws(VsexprError) {
+        try encode(to: &string, strategy: .convertToSnakeCase)
+    }
 }
 
 extension String: VsexprEncodable {
-    public func encode(to string: inout String) {
+    public func encode(to string: inout String, strategy: VsexprEncoder.KeyEncodingStrategy) {
         var needsQuote = false
         if isEmpty {
             needsQuote = true
@@ -122,42 +149,102 @@ extension String: VsexprEncodable {
 }
 
 extension UInt32: VsexprEncodable {
-    public func encode(to string: inout String) {
+    public func encode(to string: inout String, strategy: VsexprEncoder.KeyEncodingStrategy) {
         string.append(String(self))
     }
 }
 
 extension UInt64: VsexprEncodable {
-    public func encode(to string: inout String) {
+    public func encode(to string: inout String, strategy: VsexprEncoder.KeyEncodingStrategy) {
         string.append(String(self))
     }
 }
 
 extension Int32: VsexprEncodable {
-    public func encode(to string: inout String) {
+    public func encode(to string: inout String, strategy: VsexprEncoder.KeyEncodingStrategy) {
         string.append(String(self))
     }
 }
 
 extension Int: VsexprEncodable {
-    public func encode(to string: inout String) {
+    public func encode(to string: inout String, strategy: VsexprEncoder.KeyEncodingStrategy) {
         string.append(String(self))
     }
 }
 
 extension Double: VsexprEncodable {
-    public func encode(to string: inout String) {
+    public func encode(to string: inout String, strategy: VsexprEncoder.KeyEncodingStrategy) {
         string.append(String(self))
     }
 }
 
 extension Bool: VsexprEncodable {
-    public func encode(to string: inout String) {
+    public func encode(to string: inout String, strategy: VsexprEncoder.KeyEncodingStrategy) {
         string.append(self ? "true" : "false")
     }
 }
 
+// MARK: - Strategy-Aware Key Comparison Helper
+
+@inline(always)
+func resolveFileKey(_ swiftKey: String, strategy: VsexprDecoder.KeyDecodingStrategy) -> String {
+    switch strategy {
+    case .useDefaultKeys:
+        return swiftKey
+    case .convertFromSnakeCase:
+        return camelToSnake(swiftKey)
+    }
+}
+
 // MARK: - SExprTokenStream Key-Value Extraction Helpers
+
+extension SExprTokenStream {
+    public mutating func extractAtomValue(for key: String) -> String? {
+        skipToNextPair()
+        guard !isAtEnd else { return nil }
+
+        guard let openToken = peek(), s_expr_token_is_open_paren(openToken) else { return nil }
+        advance()
+
+        guard let keyToken = peek(), s_expr_token_is_atom(keyToken) else {
+            skipPastClose()
+            return nil
+        }
+        let expected = resolveFileKey(key, strategy: keyDecodingStrategy)
+        let tokenKey = tokenText(keyToken)
+        guard tokenKey == expected else {
+            skipPastClose()
+            return nil
+        }
+        advance()
+
+        guard let valToken = peek(), s_expr_token_is_atom(valToken) else {
+            skipPastClose()
+            return nil
+        }
+        let value = tokenText(valToken)
+        advance()
+
+        skipPastClose()
+        return value
+    }
+
+    public mutating func extractUInt32Value(for key: String) -> UInt32? {
+        guard let str = extractAtomValue(for: key) else { return nil }
+        return UInt32(str)
+    }
+
+    public mutating func extractBoolValue(for key: String) -> Bool? {
+        guard let str = extractAtomValue(for: key) else { return nil }
+        switch str {
+        case "true", "1", "yes", "on": return true
+        case "false", "0", "no", "off": return false
+        default: return nil
+        }
+    }
+}
+
+// MARK: - SExprTokenStream Key-Value Typed Extraction Helpers
 
 extension SExprTokenStream {
     public mutating func extractString(for key: String) throws(VsexprError) -> String {
@@ -197,7 +284,7 @@ extension SExprTokenStream {
         return value
     }
 
-    public mutating func extractGroup(for key: String) throws(VsexprError) -> SExprTokenStream {
+    public mutating func requireGroup(for key: String) throws(VsexprError) -> SExprTokenStream {
         guard let group = extractGroup(for: key) else {
             throw .missingKey(key)
         }
@@ -210,7 +297,7 @@ extension SExprTokenStream {
 extension SExprTokenStream {
     public static func serialize<T: VsexprEncodable>(_ value: T) throws(VsexprError) -> String {
         var string = ""
-        try value.encode(to: &string)
+        try value.encode(to: &string, strategy: .convertToSnakeCase)
         return string
     }
 }
