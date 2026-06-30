@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.3
 import PackageDescription
 
 let cxxSettings: [CXXSetting] = [
@@ -56,7 +56,7 @@ let swiftSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "vsexpr",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v26)],
     products: [
         .library(name: "vsexpr", targets: ["vsexpr"])
     ],
