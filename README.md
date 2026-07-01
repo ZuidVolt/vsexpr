@@ -1,6 +1,6 @@
 # Vsexpr
 
-A high-performance S-expression parser built on Clang SIMD vector extensions with a Swift 6.0+ wrapper using seamless C++ interoperability.
+A high-performance S-expression parser built on Clang SIMD vector extensions
 
 [![SwiftPM](https://img.shields.io/badge/SwiftPM-compatible-orange.svg?style=flat)](https://github.com/apple/swift-package-manager)
 [![Swift 6.0+](https://img.shields.io/badge/Swift-6.0%2B-blue.svg?style=flat)](https://swift.org)
